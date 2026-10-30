@@ -1,13 +1,14 @@
 // src/pages/2_People/MembersPage.jsx
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Search, Phone, UserPlus, Layers, QrCode, 
   MapPin, Users, Cloud, CloudOff, Plus, X, 
-  Calendar, Mail, Droplets, Flame, Building2, Trash2 
+  Calendar, Mail, Droplets, Flame, Building2, Trash2, Pencil
 } from 'lucide-react';
 import GlassCard from '../../components/common/GlassCard';
 import MemberIdCardModal from '../../components/modals/MemberIdCardModal';
 import { useVaultStorage } from '../../hooks/useVaultStorage';
+import { deleteMemberById, upsertMember } from '../../services/memberService';
 
 const BACKUP_MEMBERS_DATA = [
   {
@@ -93,7 +94,12 @@ const BACKUP_MEMBERS_DATA = [
   }
 ];
 
-export default function MembersPage({ theme }) {
+export default function MembersPage({
+  theme,
+  onAddNewMember,
+  onEditMember,
+  refreshTrigger = 0
+}) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
   const [expandedFamilyId, setExpandedFamilyId] = useState('FAM-101');
@@ -104,6 +110,9 @@ export default function MembersPage({ theme }) {
   const [isHeadModalOpen, setIsHeadModalOpen] = useState(false);
   const [isSubMemberModalOpen, setIsSubMemberModalOpen] = useState(false);
   const [targetFamilyForSub, setTargetFamilyForSub] = useState(null);
+  const [editingFamilyId, setEditingFamilyId] = useState(null);
+  const [editingSubMemberId, setEditingSubMemberId] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // குடும்பத் தலைவர் படிவம்
   const [headForm, setHeadForm] = useState({
@@ -140,18 +149,91 @@ export default function MembersPage({ theme }) {
   const { 
     data: rawFamilies, 
     saveData: syncFamilies,
+    deleteData: removeFamily,
     isCloudSynced, 
-    refreshData 
+    refreshData,
+    isLoading
   } = useVaultStorage('members', BACKUP_MEMBERS_DATA);
+
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      refreshData();
+    }
+  }, [refreshTrigger, refreshData]);
 
   // 🌟 Normalizer (raw_payload-ஐ பிரித்து எடுத்தல்)
   const normalizedFamilies = React.useMemo(() => {
     const list = Array.isArray(rawFamilies) ? rawFamilies : [];
     const seenMap = new Map();
+    const individualGroups = new Map();
 
     list.forEach((row, idx) => {
       // raw_payload இருந்தால் அதை முதன்மையாக எடுத்தல்
-      const fam = row.raw_payload ? (typeof row.raw_payload === 'string' ? JSON.parse(row.raw_payload) : row.raw_payload) : row;
+      const fam = row.raw_payload
+        ? {
+            ...row,
+            ...(typeof row.raw_payload === 'string' ? JSON.parse(row.raw_payload) : row.raw_payload)
+          }
+        : row;
+      const hasHouseholdPayload = Boolean(
+        fam.headMember ||
+        Array.isArray(fam.members) ||
+        typeof fam.members === 'string'
+      );
+
+      if (!hasHouseholdPayload && (fam.name || fam.memberId || row.id)) {
+        const familyId = String(fam.family_id || fam.familyId || row.family_id || row.id || `FAM-${idx + 101}`);
+        const role = fam.household_role || fam.roleInFamily || fam.role || '';
+        const memberId = String(row.id || fam.id || fam.memberId || `MBR-${idx + 101}`);
+        const member = {
+          sourceData: fam,
+          memberId,
+          name: fam.name || fam.head_name || 'Unnamed Believer',
+          gender: fam.gender || 'Other',
+          dob: fam.date_of_birth || fam.dob || '',
+          age: fam.age ?? '',
+          phone: fam.phone || '',
+          email: fam.email || '',
+          bloodGroup: fam.blood_group || fam.bloodGroup || 'N/A',
+          weddingAnniversary: fam.wedding_anniversary || fam.weddingAnniversary || '',
+          baptismDate: fam.baptism_date || fam.baptismDate || '',
+          isBaptized: Boolean(fam.is_baptized ?? fam.isBaptized ?? fam.baptism_date ?? fam.baptismDate),
+          holySpiritBaptism: Boolean(fam.is_anointed ?? fam.holySpiritBaptism),
+          emergencyContact: fam.emergency_contact || fam.emergencyContact || '',
+          roleInFamily: role || (memberId === familyId ? 'Head of Family' : 'Member'),
+          ministryTalents: fam.ministry_talents || fam.ministryTalents || [],
+          status: fam.status || 'Active'
+        };
+        const isHead = member.roleInFamily === 'Head of Family' ||
+          /head of family/i.test(member.roleInFamily) ||
+          /lead pastor/i.test(member.roleInFamily) ||
+          (!role && memberId === familyId);
+
+        if (!individualGroups.has(familyId)) {
+          individualGroups.set(familyId, {
+            familyId,
+            familyName: fam.family_name || fam.familyName || `${member.name} & Household`,
+            area: fam.area || 'Koduvai',
+            address: fam.address || '',
+            campus: fam.campus || 'Main Sanctuary',
+            headMember: null,
+            members: []
+          });
+        }
+
+        const group = individualGroups.get(familyId);
+        if (isHead && !group.headMember) {
+          group.headMember = member;
+          group.familyName = fam.family_name || fam.familyName || `${member.name} & Household`;
+        } else {
+          group.members.push(member);
+        }
+        group.area = fam.area || group.area;
+        group.address = fam.address || group.address;
+        group.campus = fam.campus || group.campus;
+        return;
+      }
+
       const head = fam.headMember || {};
 
       const headName = head.name || fam.name || fam.head_name || 'Unnamed Believer';
@@ -178,7 +260,7 @@ export default function MembersPage({ theme }) {
       const address = fam.address || head.address || '';
       const campus = fam.campus || head.campus || 'Main Sanctuary';
 
-      const uniqueKey = headPhone ? headPhone : headName.toLowerCase().trim();
+      const uniqueKey = String(familyId);
 
       if (!seenMap.has(uniqueKey)) {
         seenMap.set(uniqueKey, {
@@ -188,6 +270,7 @@ export default function MembersPage({ theme }) {
           address,
           campus,
           headMember: {
+            sourceData: head,
             memberId: headMemberId,
             name: headName,
             gender: head.gender || 'Male',
@@ -197,26 +280,140 @@ export default function MembersPage({ theme }) {
             bloodGroup: headBlood,
             weddingAnniversary: head.weddingAnniversary || '',
             baptismDate: head.baptismDate || '',
+            isBaptized: Boolean(head.isBaptized ?? head.is_baptized ?? head.baptismDate),
             holySpiritBaptism: Boolean(head.holySpiritBaptism),
             emergencyContact: head.emergencyContact || '',
             roleInFamily: headRole,
             ministryTalents: headTalents
           },
           members: membersList.map((m, mIdx) => ({
+            sourceData: m,
             name: m.name || `Member ${mIdx + 1}`,
             roleInFamily: m.roleInFamily || m.role || 'Member',
             memberId: m.memberId || m.id || `${headMemberId}-${mIdx + 1}`,
             bloodGroup: m.bloodGroup || m.blood_group || 'N/A',
             phone: m.phone || '',
             dob: m.dob || '',
-            gender: m.gender || 'Female'
+            gender: m.gender || 'Female',
+            status: m.status || 'Active',
+            isBaptized: Boolean(m.isBaptized ?? m.is_baptized ?? m.baptismDate ?? m.baptism_date)
           }))
         });
       }
     });
 
+    individualGroups.forEach((family, familyId) => {
+      if (!family.headMember) {
+        family.headMember = family.members.shift() || {
+          memberId: familyId,
+          name: 'Unnamed Believer',
+          roleInFamily: 'Head of Family',
+          phone: 'No phone',
+          bloodGroup: 'N/A',
+          ministryTalents: [],
+          status: 'Active'
+        };
+      }
+
+      const existingFamily = seenMap.get(familyId);
+      if (existingFamily) {
+        existingFamily.members = [...existingFamily.members, ...family.members];
+      } else {
+        seenMap.set(familyId, family);
+      }
+    });
+
     return Array.from(seenMap.values());
   }, [rawFamilies]);
+
+  const isIndividualMemberData = (Array.isArray(rawFamilies) ? rawFamilies : []).some((row) => (
+    row.household_role && !row.headMember && !Array.isArray(row.members)
+  ));
+
+  const persistFamilies = async (updatedFamilies) => {
+    if (!isIndividualMemberData) {
+      await syncFamilies(updatedFamilies);
+      return;
+    }
+
+    const nextRecords = updatedFamilies.flatMap((family) => {
+      const familyMembers = [
+        { ...family.headMember, roleInFamily: family.headMember.roleInFamily || 'Head of Family' },
+        ...family.members
+      ];
+
+      return familyMembers.map((member) => {
+        const source = rawFamilies.find(row => String(row.id) === String(member.memberId)) || {};
+        const sourcePayload = typeof source.raw_payload === 'string'
+          ? JSON.parse(source.raw_payload)
+          : source.raw_payload || {};
+        const record = {
+          id: member.memberId,
+          family_id: family.familyId,
+          house_id: source.house_id || family.familyId,
+          household_role: member.roleInFamily,
+          family_name: family.familyName,
+          head_name: family.headMember.name,
+          name: member.name,
+          gender: member.gender || source.gender || 'Other',
+          date_of_birth: member.dob || source.date_of_birth || null,
+          age: member.age ?? source.age ?? null,
+          blood_group: member.bloodGroup || source.blood_group || null,
+          wedding_anniversary: member.weddingAnniversary || source.wedding_anniversary || null,
+          type: member.type || source.type || 'Member',
+          status: member.status || source.status || 'Active',
+          phone: member.phone || null,
+          email: member.email || null,
+          campus: family.campus || source.campus || null,
+          area: family.area || source.area || null,
+          address: family.address || source.address || null,
+          gps_coordinates: source.gps_coordinates || null,
+          is_baptized: Boolean(member.isBaptized ?? source.is_baptized),
+          baptism_date: member.baptismDate || source.baptism_date || null,
+          is_anointed: Boolean(member.holySpiritBaptism ?? source.is_anointed),
+          holy_spirit_baptism_date: source.holy_spirit_baptism_date || null,
+          ministry_talents: member.ministryTalents || source.ministry_talents || [],
+          created_at: source.created_at,
+          raw_payload: {
+            ...sourcePayload,
+            memberId: member.memberId,
+            familyId: family.familyId,
+            name: member.name,
+            roleInFamily: member.roleInFamily,
+            gender: member.gender,
+            dob: member.dob || '',
+            age: member.age ?? '',
+            bloodGroup: member.bloodGroup || '',
+            phone: member.phone || '',
+            email: member.email || '',
+            weddingAnniversary: member.weddingAnniversary || '',
+            baptismDate: member.baptismDate || '',
+            isBaptized: Boolean(member.isBaptized),
+            isAnointed: Boolean(member.holySpiritBaptism),
+            holySpiritBaptismDate: source.holy_spirit_baptism_date || '',
+            emergencyContact: member.emergencyContact || '',
+            status: member.status || 'Active',
+            ministryTalents: member.ministryTalents || []
+          }
+        };
+
+        return record;
+      });
+    });
+
+    const nextIds = new Set(nextRecords.map(record => String(record.id)));
+    const removedIds = rawFamilies
+      .filter(row => row.family_id && !nextIds.has(String(row.id)))
+      .map(row => row.id);
+
+    for (const record of nextRecords) {
+      await upsertMember(record);
+    }
+    for (const memberId of removedIds) {
+      await deleteMemberById(memberId);
+    }
+    await refreshData();
+  };
 
   // புதிய குடும்பத்தைப் பதிவு செய்தல்
   const handleSaveHead = async (e) => {
@@ -226,7 +423,47 @@ export default function MembersPage({ theme }) {
       return;
     }
 
+    setIsSaving(true);
     const nextId = Date.now().toString().slice(-4);
+    const talentList = [headForm.ministryTalents].filter(Boolean);
+
+    if (editingFamilyId) {
+      const updated = normalizedFamilies.map((family) => {
+        if (family.familyId !== editingFamilyId) return family;
+        const existingHead = family.headMember;
+        const name = headForm.name.trim();
+
+        return {
+          ...family,
+          familyName: `${name} & Household`,
+          address: headForm.address,
+          area: headForm.area.trim() || 'Koduvai',
+          campus: headForm.campus,
+          headMember: {
+            ...existingHead,
+            ...headForm,
+            name,
+            phone: headForm.phone.trim(),
+            memberId: existingHead.memberId,
+            ministryTalents: existingHead.ministryTalents || talentList,
+            roleInFamily: existingHead.roleInFamily
+          }
+        };
+      });
+
+      try {
+        await persistFamilies(updated);
+        alert(`வெற்றி! ${headForm.name.trim()} குடும்ப விவரங்கள் புதுப்பிக்கப்பட்டன.`);
+        setIsHeadModalOpen(false);
+        setEditingFamilyId(null);
+      } catch (error) {
+        alert(`Supabase ஒத்திசைவு தோல்வியடைந்தது: ${error.message}. சாதனத்தில் உள்ள vault நகல் தக்கவைக்கப்பட்டது.`);
+      } finally {
+        setIsSaving(false);
+      }
+      return;
+    }
+
     const newFamily = {
       familyId: `FAM-${nextId}`,
       familyName: `${headForm.name.trim()} & Household`,
@@ -236,7 +473,7 @@ export default function MembersPage({ theme }) {
       headMember: {
         ...headForm,
         memberId: `GCC-MBR-${nextId}`,
-        ministryTalents: [headForm.ministryTalents],
+        ministryTalents: talentList,
         roleInFamily: headForm.name.includes('Pastor') ? 'Lead Pastor' : 'Head of Family',
         status: 'Active'
       },
@@ -248,10 +485,16 @@ export default function MembersPage({ theme }) {
     };
 
     const updated = [newFamily, ...normalizedFamilies];
-    await syncFamilies(updated);
-    alert(`வெற்றி! ${newFamily.headMember.name} குடும்பம் சேர்க்கப்பட்டது.`);
-    setIsHeadModalOpen(false);
-    setInitialMembers([]);
+    try {
+      await persistFamilies(updated);
+      alert(`வெற்றி! ${newFamily.headMember.name} குடும்பம் சேர்க்கப்பட்டது.`);
+      setIsHeadModalOpen(false);
+      setInitialMembers([]);
+    } catch (error) {
+      alert(`Supabase ஒத்திசைவு தோல்வியடைந்தது: ${error.message}. சாதனத்தில் உள்ள vault நகல் தக்கவைக்கப்பட்டது.`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // துணை உறுப்பினரைச் சேர்த்தல்
@@ -259,44 +502,169 @@ export default function MembersPage({ theme }) {
     e.preventDefault();
     if (!subForm.name.trim() || !targetFamilyForSub) return;
 
-    const newSub = {
-      ...subForm,
-      memberId: `GCC-MBR-${Math.floor(10000 + Math.random() * 90000)}`,
-      status: 'Active'
-    };
+    setIsSaving(true);
+    const newSub = editingSubMemberId
+      ? {
+          ...subForm,
+          memberId: editingSubMemberId,
+          status: targetFamilyForSub.members.find(member => member.memberId === editingSubMemberId)?.status || 'Active'
+        }
+      : {
+          ...subForm,
+          memberId: `GCC-MBR-${Math.floor(10000 + Math.random() * 90000)}`,
+          status: 'Active'
+        };
 
     const updated = normalizedFamilies.map(f => {
       if (f.familyId === targetFamilyForSub.familyId) {
         return {
           ...f,
-          members: [...(f.members || []), newSub]
+          members: editingSubMemberId
+            ? (f.members || []).map((member) => (
+                member.memberId === editingSubMemberId ? newSub : member
+              ))
+            : [...(f.members || []), newSub]
         };
       }
       return f;
     });
 
-    await syncFamilies(updated);
-    setExpandedFamilyId(targetFamilyForSub.familyId);
-    setIsSubMemberModalOpen(false);
-    alert(`வெற்றி! ${newSub.name} ${targetFamilyForSub.familyName}-ல் சேர்க்கப்பட்டார்.`);
+    try {
+      await persistFamilies(updated);
+      setExpandedFamilyId(targetFamilyForSub.familyId);
+      setIsSubMemberModalOpen(false);
+      setEditingSubMemberId(null);
+      alert(editingSubMemberId
+        ? `${newSub.name} விவரங்கள் புதுப்பிக்கப்பட்டன.`
+        : `வெற்றி! ${newSub.name} ${targetFamilyForSub.familyName}-ல் சேர்க்கப்பட்டார்.`);
+    } catch (error) {
+      alert(`Supabase ஒத்திசைவு தோல்வியடைந்தது: ${error.message}. சாதனத்தில் உள்ள vault நகல் தக்கவைக்கப்பட்டது.`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteHousehold = async (family) => {
+    if (!window.confirm(`${family.familyName} குடும்பத்தையும் அதன் உறுப்பினர்களையும் நீக்கவா?`)) return;
+
+    setIsSaving(true);
+    try {
+      await removeFamily(family.familyId);
+      alert(`${family.familyName} குடும்பம் நீக்கப்பட்டது.`);
+    } catch (error) {
+      alert(`குடும்பத்தை நீக்க முடியவில்லை: ${error.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteSubMember = async (family, member) => {
+    if (!window.confirm(`${member.name} உறுப்பினரை நீக்கவா?`)) return;
+
+    setIsSaving(true);
+    try {
+      const updated = normalizedFamilies.map((item) => item.familyId === family.familyId
+        ? { ...item, members: item.members.filter(person => person.memberId !== member.memberId) }
+        : item);
+      await persistFamilies(updated);
+      alert(`${member.name} நீக்கப்பட்டார்.`);
+    } catch (error) {
+      alert(`உறுப்பினரை நீக்க முடியவில்லை: ${error.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const openHeadEditor = (family) => {
+    const head = family.headMember;
+    setEditingFamilyId(family.familyId);
+    setHeadForm({
+      name: head.name === 'Unnamed Believer' ? '' : head.name,
+      gender: head.gender || 'Male',
+      dob: head.dob || '',
+      phone: head.phone === 'No phone' ? '' : head.phone,
+      email: head.email || '',
+      area: family.area || 'Koduvai',
+      address: family.address || '',
+      campus: family.campus || 'Main Sanctuary',
+      bloodGroup: head.bloodGroup || 'O+',
+      weddingAnniversary: head.weddingAnniversary || '',
+      baptismDate: head.baptismDate || '',
+      holySpiritBaptism: Boolean(head.holySpiritBaptism),
+      emergencyContact: head.emergencyContact || '',
+      ministryTalents: head.ministryTalents?.[0] || 'Worship Team & Vocals'
+    });
+    setInitialMembers([]);
+    setIsHeadModalOpen(true);
+  };
+
+  const getMemberProfileData = (family, member) => ({
+    id: member.memberId,
+    family_id: family.familyId,
+    house_id: member.sourceData?.house_id || member.memberId,
+    household_role: member.roleInFamily || 'Member',
+    family_name: family.familyName,
+    head_name: family.headMember.name,
+    name: member.name,
+    gender: member.gender || 'Other',
+    date_of_birth: member.dob || '',
+    age: member.age ?? '',
+    blood_group: member.bloodGroup || 'N/A',
+    wedding_anniversary: member.weddingAnniversary || '',
+    type: member.type || 'Member',
+    status: member.status || 'Active',
+    phone: member.phone || '',
+    email: member.email || '',
+    campus: family.campus || '',
+    area: family.area || '',
+    address: family.address || '',
+    gps_coordinates: member.sourceData?.gps_coordinates || '',
+    emergency_contact: member.emergencyContact || member.sourceData?.emergency_contact || member.sourceData?.emergencyContact || '',
+    is_baptized: Boolean(member.isBaptized),
+    baptism_date: member.baptismDate || '',
+    is_anointed: Boolean(member.holySpiritBaptism),
+    holy_spirit_baptism_date: member.sourceData?.holy_spirit_baptism_date || member.sourceData?.holySpiritBaptismDate || '',
+    ministry_talents: member.ministryTalents || [],
+    raw_payload: member.sourceData?.raw_payload || {},
+    created_at: member.sourceData?.created_at
+  });
+
+  const openSubMemberEditor = (family, member) => {
+    setTargetFamilyForSub(family);
+    setEditingSubMemberId(member.memberId);
+    setSubForm({
+      name: member.name || '',
+      roleInFamily: member.roleInFamily || 'Member',
+      gender: member.gender || 'Female',
+      dob: member.dob || '',
+      phone: member.phone || '',
+      bloodGroup: member.bloodGroup || 'A+'
+    });
+    setIsSubMemberModalOpen(true);
   };
 
   const filterOptions = ['All', 'Families', 'Leaders', 'To be baptized'];
 
   const filteredFamilies = normalizedFamilies.filter((fam) => {
-    const q = (searchQuery || '').toLowerCase();
+    const q = searchQuery.trim().toLowerCase();
     const head = fam.headMember;
-    const matchesSearch = 
-      head.name.toLowerCase().includes(q) || 
-      head.phone.includes(q) || 
-      fam.area.toLowerCase().includes(q) ||
-      fam.campus.toLowerCase().includes(q) ||
-      fam.familyName.toLowerCase().includes(q) ||
-      fam.members.some(m => m.name.toLowerCase().includes(q));
+    const searchValues = [
+      fam.familyId, fam.familyName, fam.address, fam.area, fam.campus,
+      head.name, head.memberId, head.phone, head.email, head.bloodGroup,
+      ...fam.members.flatMap((member) => [
+        member.name, member.memberId, member.phone, member.roleInFamily, member.bloodGroup
+      ])
+    ];
+    const matchesSearch = searchValues.some(value => String(value || '').toLowerCase().includes(q));
 
     if (!matchesSearch) return false;
     if (activeFilter === 'Families') return fam.members.length > 0;
-    if (activeFilter === 'Leaders') return head.ministryTalents?.length > 0 || head.name.includes('Pastor');
+    if (activeFilter === 'Leaders') {
+      return head.ministryTalents?.length > 0 || /pastor|leader/i.test(head.roleInFamily || head.name);
+    }
+    if (activeFilter === 'To be baptized') {
+      return !head.isBaptized || fam.members.some(member => !member.isBaptized);
+    }
     return true;
   });
 
@@ -320,7 +688,7 @@ export default function MembersPage({ theme }) {
               }`}
             >
               {isCloudSynced ? <Cloud size={10} /> : <CloudOff size={10} />}
-              <span>{isCloudSynced ? 'Supabase Live' : 'Vault Synced'}</span>
+              <span>{isLoading ? 'Syncing...' : isCloudSynced ? 'Supabase Live' : 'Vault Synced'}</span>
             </button>
           </div>
           <span className="text-[11px] opacity-60 font-semibold">
@@ -331,6 +699,27 @@ export default function MembersPage({ theme }) {
         <button
           type="button"
           onClick={() => {
+            if (onAddNewMember) {
+              onAddNewMember();
+              return;
+            }
+            setEditingFamilyId(null);
+            setHeadForm({
+              name: '',
+              gender: 'Male',
+              dob: '',
+              phone: '',
+              email: '',
+              area: 'Koduvai',
+              address: '',
+              campus: 'Main Sanctuary',
+              bloodGroup: 'O+',
+              weddingAnniversary: '',
+              baptismDate: '',
+              holySpiritBaptism: false,
+              emergencyContact: '',
+              ministryTalents: 'Worship Team & Vocals'
+            });
             setInitialMembers([]);
             setIsHeadModalOpen(true);
           }}
@@ -426,6 +815,19 @@ export default function MembersPage({ theme }) {
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
+                    onClick={() => onEditMember
+                      ? onEditMember(getMemberProfileData(fam, fam.headMember))
+                      : openHeadEditor(fam)}
+                    disabled={isSaving}
+                    className="p-2 rounded-xl border flex items-center justify-center transition active:scale-95 cursor-pointer disabled:opacity-50"
+                    style={{ background: theme.glassBg, borderColor: theme.glassBorder, color: theme.textMain }}
+                    title="Edit Family Head"
+                  >
+                    <Pencil size={14} />
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => {
                       setSelectedFamily(fam);
                       setSelectedCardMember(head);
@@ -435,6 +837,17 @@ export default function MembersPage({ theme }) {
                     title="Smart PVC ID Card"
                   >
                     <QrCode size={15} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteHousehold(fam)}
+                    disabled={isSaving}
+                    className="p-2 rounded-xl border flex items-center justify-center transition active:scale-95 cursor-pointer disabled:opacity-50"
+                    style={{ background: theme.glassBg, borderColor: theme.glassBorder, color: '#f87171' }}
+                    title="Delete Household"
+                  >
+                    <Trash2 size={14} />
                   </button>
 
                   <button
@@ -498,7 +911,28 @@ export default function MembersPage({ theme }) {
                     <button
                       type="button"
                       onClick={() => {
+                        if (onAddNewMember) {
+                          onAddNewMember({
+                            family_id: fam.familyId,
+                            household_role: 'Spouse / Wife',
+                            family_name: fam.familyName,
+                            head_name: fam.headMember.name,
+                            campus: fam.campus,
+                            area: fam.area,
+                            address: fam.address
+                          });
+                          return;
+                        }
                         setTargetFamilyForSub(fam);
+                        setEditingSubMemberId(null);
+                        setSubForm({
+                          name: '',
+                          roleInFamily: 'Spouse / Wife',
+                          gender: 'Female',
+                          dob: '',
+                          phone: '',
+                          bloodGroup: 'A+'
+                        });
                         setIsSubMemberModalOpen(true);
                       }}
                       className="px-2 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-400 border border-cyan-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer active:scale-95"
@@ -544,6 +978,28 @@ export default function MembersPage({ theme }) {
                             <QrCode size={12} />
                             <span className="text-[9px] font-bold">ID</span>
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => onEditMember
+                              ? onEditMember(getMemberProfileData(fam, m))
+                              : openSubMemberEditor(fam, m)}
+                            disabled={isSaving}
+                            className="p-1.5 rounded-lg border flex items-center justify-center transition active:scale-95 cursor-pointer disabled:opacity-50"
+                            style={{ borderColor: theme.glassBorder, color: theme.textMain }}
+                            title="Edit Member"
+                          >
+                            <Pencil size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSubMember(fam, m)}
+                            disabled={isSaving}
+                            className="p-1.5 rounded-lg border flex items-center justify-center transition active:scale-95 cursor-pointer disabled:opacity-50"
+                            style={{ borderColor: theme.glassBorder, color: '#f87171' }}
+                            title="Delete Member"
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -553,6 +1009,11 @@ export default function MembersPage({ theme }) {
             </GlassCard>
           );
         })}
+        {filteredFamilies.length === 0 && (
+          <div className="py-8 text-center text-xs opacity-60">
+            No households match your search or filter.
+          </div>
+        )}
       </div>
 
       {/* 5. MODAL 1: REGISTER NEW FAMILY HEAD + HOUSEHOLD BUNDLE */}
@@ -566,9 +1027,9 @@ export default function MembersPage({ theme }) {
             <div className="flex justify-between items-center pb-2 border-b border-black/10 dark:border-white/10">
               <h3 className="text-xs font-extrabold flex items-center gap-1.5">
                 <UserPlus size={16} style={{ color: theme.accent }} />
-                <span>Register Believer Household</span>
+                <span>{editingFamilyId ? 'Edit Family Head' : 'Register Believer Household'}</span>
               </h3>
-              <button onClick={() => setIsHeadModalOpen(false)} className="cursor-pointer opacity-60 hover:opacity-100">
+              <button type="button" onClick={() => setIsHeadModalOpen(false)} className="cursor-pointer opacity-60 hover:opacity-100">
                 <X size={16} />
               </button>
             </div>
@@ -689,6 +1150,7 @@ export default function MembersPage({ theme }) {
               </div>
 
               {/* 🌟 குடும்ப உறுப்பினர்களை இங்கேயே சேர்க்கும் வசதி (Household Bundle) */}
+              {!editingFamilyId && (
               <div className="p-3 rounded-2xl bg-black/5 dark:bg-white/5 border border-white/10 space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-[11px] font-bold text-cyan-400">Household Members Bundle ({initialMembers.length})</span>
@@ -737,13 +1199,15 @@ export default function MembersPage({ theme }) {
                   </div>
                 ))}
               </div>
+              )}
 
               <button
                 type="submit"
+                disabled={isSaving}
                 className="w-full py-2.5 rounded-2xl text-white font-bold text-xs shadow-md transition active:scale-95 cursor-pointer mt-1"
                 style={{ background: theme.accent }}
               >
-                Save Believer Household
+                {isSaving ? 'Saving...' : editingFamilyId ? 'Save Family Changes' : 'Save Believer Household'}
               </button>
             </form>
           </div>
@@ -762,11 +1226,11 @@ export default function MembersPage({ theme }) {
               <div>
                 <h3 className="text-xs font-extrabold flex items-center gap-1.5">
                   <Users size={16} style={{ color: theme.accent }} />
-                  <span>Add Family Member</span>
+                  <span>{editingSubMemberId ? 'Edit Family Member' : 'Add Family Member'}</span>
                 </h3>
                 <span className="text-[10px] opacity-60">To: {targetFamilyForSub.familyName}</span>
               </div>
-              <button onClick={() => setIsSubMemberModalOpen(false)} className="cursor-pointer opacity-60 hover:opacity-100">
+              <button type="button" onClick={() => setIsSubMemberModalOpen(false)} className="cursor-pointer opacity-60 hover:opacity-100">
                 <X size={16} />
               </button>
             </div>
@@ -796,6 +1260,7 @@ export default function MembersPage({ theme }) {
                     <option value="Son / Daughter">Son / Daughter</option>
                     <option value="Father / Mother">Father / Mother</option>
                     <option value="Brother / Sister">Brother / Sister</option>
+                    <option value="Member">Other / Member</option>
                   </select>
                 </div>
 
@@ -826,10 +1291,11 @@ export default function MembersPage({ theme }) {
 
               <button
                 type="submit"
+                disabled={isSaving}
                 className="w-full py-2.5 rounded-2xl text-white font-bold text-xs shadow-md transition active:scale-95 cursor-pointer mt-1"
                 style={{ background: theme.accent }}
               >
-                Add to Household
+                {isSaving ? 'Saving...' : editingSubMemberId ? 'Save Member Changes' : 'Add to Household'}
               </button>
             </form>
           </div>

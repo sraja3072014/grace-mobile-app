@@ -1,6 +1,7 @@
 // src/hooks/useVaultStorage.js
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../utils/supabaseClient';
+import { deleteHousehold, fetchAllMembers } from '../services/memberService';
 
 export function useVaultStorage(tableName, initialFallbackData = []) {
   const [data, setData] = useState(() => {
@@ -22,11 +23,13 @@ export function useVaultStorage(tableName, initialFallbackData = []) {
 
     if (supabase) {
       try {
-        const { data: cloudData, error } = await supabase
-          .from(tableName)
-          .select('*');
+        const { data: cloudData, error } = tableName === 'members'
+          ? { data: await fetchAllMembers(), error: null }
+          : await supabase
+            .from(tableName)
+            .select('*');
 
-        if (!error && Array.isArray(cloudData) && cloudData.length > 0) {
+        if (!error && Array.isArray(cloudData) && (cloudData.length > 0 || tableName === 'members')) {
           // Supabase-ன் raw_payload மற்றும் நேரடிக் காலம்களை ஒருங்கிணைத்தல்
           const parsedCloudData = cloudData.map(row => {
             let payload = {};
@@ -36,17 +39,26 @@ export function useVaultStorage(tableName, initialFallbackData = []) {
                 : row.raw_payload;
             }
 
+            const householdPayload = Boolean(
+              payload.headMember ||
+              Array.isArray(payload.members) ||
+              typeof payload.members === 'string'
+            );
+
             return {
+              ...row,
               id: row.id || row.family_id || payload.familyId,
               familyId: row.family_id || row.id || payload.familyId,
               familyName: row.family_name || payload.familyName,
               campus: row.campus || payload.campus || 'Headquarters',
               ...payload,
-              headMember: {
-                ...(payload.headMember || {}),
-                name: payload.headMember?.name || row.head_name,
-                phone: payload.headMember?.phone || row.phone
-              }
+              ...(householdPayload ? {
+                headMember: {
+                  ...(payload.headMember || {}),
+                  name: payload.headMember?.name || row.head_name,
+                  phone: payload.headMember?.phone || row.phone
+                }
+              } : {})
             };
           });
 
@@ -114,14 +126,16 @@ export function useVaultStorage(tableName, initialFallbackData = []) {
           .from(tableName)
           .upsert(exactPayload, { onConflict: 'id' });
 
-        if (!error) {
-          setIsCloudSynced(true);
-          return true;
-        } else {
-          console.warn("[Vault] Supabase upsert error:", error.message);
+        if (error) {
+          throw error;
         }
+
+        setIsCloudSynced(true);
+        return true;
       } catch (err) {
+        setIsCloudSynced(false);
         console.error(`[Vault] Cloud save exception:`, err);
+        throw err;
       }
     }
 
@@ -129,9 +143,38 @@ export function useVaultStorage(tableName, initialFallbackData = []) {
     return true;
   };
 
+  const deleteData = async (recordId) => {
+    if (tableName === 'members' && supabase) {
+      try {
+        await deleteHousehold(recordId);
+      } catch (error) {
+        setIsCloudSynced(false);
+        throw error;
+      }
+    } else if (supabase) {
+      const { error } = await supabase
+        .from(tableName)
+        .delete()
+        .eq('id', recordId);
+
+      if (error) {
+        setIsCloudSynced(false);
+        console.error(`[Vault] Cloud delete exception for ${tableName}:`, error);
+        throw error;
+      }
+    }
+
+    const updatedData = data.filter(item => String(item.familyId || item.id) !== String(recordId));
+    setData(updatedData);
+    localStorage.setItem(`graceos_vault_${tableName}`, JSON.stringify(updatedData));
+    setIsCloudSynced(Boolean(supabase));
+    return true;
+  };
+
   return {
     data,
     saveData,
+    deleteData,
     isLoading,
     isCloudSynced,
     refreshData: loadData

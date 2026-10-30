@@ -1,211 +1,248 @@
 // src/pages/1_Overview/OverviewTab.jsx
 import React from 'react';
 import { 
-  Users, Building2, DollarSign, CalendarCheck, 
-  HeartHandshake, AlertCircle, Landmark, Phone 
+  Calendar, Users, DollarSign, MessageSquare, 
+  MapPin, Heart, HandHelping, Church, 
+  ChevronRight, ArrowUpRight, CheckCircle2, Clock
 } from 'lucide-react';
-import GlassCard from '../../components/common/GlassCard';
 
-export default function OverviewTab({
-  theme,
-  userProfile,
-  totalCongregation = 1245,
-  totalHouseholds = 384,
-  monthGiving = 322000,
-  liveCheckins = 128,
-  onOpenAttendance,
-  onOpenMembers,
-  onOpenFinance
+// 🌟 Outer Border, Transparent Center, Bottom Glow கொண்ட பல அடுக்கு கிளாஸ் கார்டு
+function MultiLayerGlassCard({ children, className = '', glowColor = 'rgba(244, 63, 94, 0.25)', onClick }) {
+  return (
+    <div 
+      onClick={onClick}
+      className={`relative rounded-[28px] p-4 transition-all duration-300 overflow-hidden select-none border backdrop-blur-md ${
+        onClick ? 'cursor-pointer active:scale-98 hover:shadow-xl' : ''
+      } ${className}`}
+      style={{
+        // Center: 100% தூய ஒளிபுகும் கண்ணாடி
+        background: 'linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.02) 60%, rgba(0, 0, 0, 0.15) 100%)',
+        // Outer Layer: மல்டி கலர் விளிம்பு
+        borderColor: 'rgba(255, 255, 255, 0.28)',
+        boxShadow: `inset 0 1px 1px rgba(255, 255, 255, 0.4), 0 12px 30px -8px ${glowColor}`
+      }}
+    >
+      {/* Bottom Layer Glow (அடிப்புறத்தில் மட்டும் ஒளிரும் வண்ண நிழல்) */}
+      <div 
+        className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-3/4 h-16 rounded-full blur-2xl pointer-events-none opacity-40"
+        style={{ background: glowColor }}
+      />
+      <div className="relative z-10">{children}</div>
+    </div>
+  );
+}
+
+export default function OverviewTab({ 
+  theme = {}, 
+  userProfile = {}, 
+  onOpenAttendance, 
+  onOpenMembers, 
+  onOpenFinance 
 }) {
-  const visitorPipeline = [
-    { stage: '1st Visit', count: 18, desc: 'New Seekers', color: 'text-amber-500' },
-    { stage: 'Pastoral Call', count: 9, desc: 'Under Care', color: 'text-sky-500' },
-    { stage: 'Home Visit', count: 6, desc: 'Cell Groups', color: 'text-indigo-500' },
-    { stage: 'Full Member', count: 4, desc: 'Ready to Add', color: 'text-emerald-500' }
-  ];
-
-  const criticalCareList = [
-    { name: 'Bro. Sarah Jenkins', missed: 'Missed 4 Services (Last seen 1 mo ago)', phone: '+91 98765 11001' },
-    { name: 'Bro. David Miller', missed: 'Missed 3 Services (Calling Pending)', phone: '+91 98765 11002' },
-    { name: 'Sister Marcus Thompson', missed: 'Missed 5 Services (Home Visit Needed)', phone: '+91 98765 11003' }
-  ];
-
-  const treasuryBranches = [
-    { name: 'Main Cathedral Treasury (SBI)', tithe: '65%', offering: '25%', building: '10%', total: '₹ 1,85,000' },
-    { name: 'North Campus Building (HDFC)', tithe: '40%', offering: '40%', building: '20%', total: '₹ 95,000' },
-    { name: 'Mission & Outreach (ICICI)', tithe: '70%', offering: '15%', building: '15%', total: '₹ 42,000' }
-  ];
+  const textColor = theme?.textMain || '#ffffff';
+  const mutedTextColor = theme?.textMuted || 'rgba(255, 255, 255, 0.7)';
+  const accentColor = theme?.accent || '#f59e0b';
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-300">
+    <div className="space-y-4 animate-in fade-in duration-300 pb-10">
       
-      {/* Verse Card */}
-      <GlassCard theme={theme} className="relative overflow-hidden p-5">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold" style={{ color: theme.textMuted }}>Good Morning,</span>
-          <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold border backdrop-blur-md" style={{ background: 'rgba(255,255,255,0.4)', borderColor: theme.glassBorder }}>
-            ✨ Daily Verse
-          </span>
-        </div>
-        <h2 className="text-xl font-extrabold mt-0.5">{userProfile?.name || 'Raja S'}</h2>
-        <p className="mt-2 text-xs italic font-medium leading-relaxed">
-          "For where two or three gather in my name, there am I with them."
-        </p>
-        <span className="text-[11px] font-bold block text-right mt-1" style={{ color: theme.accent }}>
-          – Matthew 18:20
-        </span>
-      </GlassCard>
+      {/* ========================================================= */}
+      {/* 🌟 1. முதல் வரிசை: 4 மெட்ரிக் பாக்ஸ்கள் (படத்தின் மேற்பகுதி) */}
+      {/* ========================================================= */}
+      <div className="grid grid-cols-4 gap-2">
+        {/* Upcoming */}
+        <MultiLayerGlassCard glowColor="rgba(56, 189, 248, 0.3)" className="p-2.5 flex flex-col justify-between h-20 text-center items-center">
+          <div className="flex items-center gap-1 opacity-80">
+            <Calendar size={13} className="text-sky-400" />
+            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>Upcoming</span>
+          </div>
+          <div className="text-base font-black flex items-center gap-0.5 leading-none" style={{ color: textColor }}>
+            <span className="text-sky-400 text-xs">▲</span> 4
+          </div>
+        </MultiLayerGlassCard>
 
-      {/* 4 Metric Tiles */}
+        {/* Attendance */}
+        <MultiLayerGlassCard glowColor="rgba(52, 211, 153, 0.3)" onClick={onOpenAttendance} className="p-2.5 flex flex-col justify-between h-20 text-center items-center">
+          <div className="flex items-center gap-1 opacity-80">
+            <Users size={13} className="text-emerald-400" />
+            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>Attend</span>
+          </div>
+          <div className="text-base font-black leading-none" style={{ color: textColor }}>
+            125
+          </div>
+        </MultiLayerGlassCard>
+
+        {/* Donations */}
+        <MultiLayerGlassCard glowColor="rgba(251, 146, 60, 0.3)" onClick={onOpenFinance} className="p-2.5 flex flex-col justify-between h-20 text-center items-center">
+          <div className="flex items-center gap-1 opacity-80">
+            <DollarSign size={13} className="text-amber-400" />
+            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>Donations</span>
+          </div>
+          <div className="text-sm font-black leading-none font-mono" style={{ color: textColor }}>
+            $2,450
+          </div>
+        </MultiLayerGlassCard>
+
+        {/* Messages */}
+        <MultiLayerGlassCard glowColor="rgba(168, 85, 247, 0.3)" className="p-2.5 flex flex-col justify-between h-20 text-center items-center">
+          <div className="flex items-center gap-1 opacity-80">
+            <MessageSquare size={13} className="text-purple-400" />
+            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>Messages</span>
+          </div>
+          <div className="text-base font-black leading-none" style={{ color: textColor }}>
+            8
+          </div>
+        </MultiLayerGlassCard>
+      </div>
+
+      {/* ========================================================= */}
+      {/* 🌟 2. இரண்டாம் வரிசை: Upcoming Events & Announcements */}
+      {/* ========================================================= */}
       <div className="grid grid-cols-2 gap-3">
-        <GlassCard theme={theme} clickable onClick={onOpenMembers} className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-inner" style={{ background: theme.glassBorder, color: theme.accent }}>
-            <Users size={18} />
-          </div>
+        
+        {/* இடதுபுற பாக்ஸ்: Upcoming Events */}
+        <MultiLayerGlassCard glowColor="rgba(249, 115, 22, 0.25)" className="p-3.5 flex flex-col justify-between">
           <div>
-            <h4 className="text-base font-extrabold leading-none">{totalCongregation.toLocaleString()}</h4>
-            <span className="text-[10px] font-bold uppercase tracking-wider mt-1 block" style={{ color: theme.textMuted }}>Believers</span>
-          </div>
-        </GlassCard>
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <h3 className="text-xs font-black" style={{ color: textColor }}>Upcoming Events</h3>
+              <span className="text-[9px] text-amber-400 font-bold flex items-center">View All →</span>
+            </div>
 
-        <GlassCard theme={theme} clickable onClick={onOpenMembers} className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-inner text-amber-500" style={{ background: theme.glassBorder }}>
-            <Building2 size={18} />
-          </div>
-          <div>
-            <h4 className="text-base font-extrabold leading-none">{totalHouseholds}</h4>
-            <span className="text-[10px] font-bold uppercase tracking-wider mt-1 block" style={{ color: theme.textMuted }}>Households</span>
-          </div>
-        </GlassCard>
+            <div className="space-y-2 mt-2.5">
+              {/* Event 1: Sunday Service */}
+              <div className="p-2 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2 hover:bg-white/[0.08] transition">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0">
+                  <Church size={18} className="text-amber-400" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold leading-tight" style={{ color: textColor }}>Sunday Service</div>
+                  <div className="text-[9px] opacity-70 mt-0.5" style={{ color: mutedTextColor }}>10:00 AM | Apr 25</div>
+                </div>
+              </div>
 
-        <GlassCard theme={theme} clickable onClick={onOpenFinance} className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-inner text-emerald-500" style={{ background: theme.glassBorder }}>
-            <DollarSign size={18} />
+              {/* Event 2: Bible Study */}
+              <div className="p-2 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2 hover:bg-white/[0.08] transition">
+                <div className="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center shrink-0">
+                  <Calendar size={18} className="text-sky-400" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold leading-tight" style={{ color: textColor }}>Bible Study</div>
+                  <div className="text-[9px] opacity-70 mt-0.5" style={{ color: mutedTextColor }}>Wed | Apr 27</div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div>
-            <h4 className="text-base font-extrabold leading-none">₹ {monthGiving.toLocaleString()}</h4>
-            <span className="text-[10px] font-bold uppercase tracking-wider mt-1 block" style={{ color: theme.textMuted }}>Month Giving</span>
-          </div>
-        </GlassCard>
+        </MultiLayerGlassCard>
 
-        <GlassCard theme={theme} clickable onClick={onOpenAttendance} className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-inner text-sky-500" style={{ background: theme.glassBorder }}>
-            <CalendarCheck size={18} />
-          </div>
+        {/* வலதுபுற பாக்ஸ்: Announcements */}
+        <MultiLayerGlassCard glowColor="rgba(14, 165, 233, 0.25)" className="p-3.5 flex flex-col justify-between">
           <div>
-            <h4 className="text-base font-extrabold leading-none">{liveCheckins}</h4>
-            <span className="text-[10px] font-bold uppercase tracking-wider mt-1 block" style={{ color: theme.textMuted }}>Live Check-ins</span>
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <h3 className="text-xs font-black" style={{ color: textColor }}>Announcements</h3>
+              <span className="text-[9px] text-sky-400 font-bold flex items-center">See More →</span>
+            </div>
+
+            <div className="space-y-2.5 mt-2.5 text-[10px]">
+              <div className="flex items-start gap-1.5 leading-snug">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-1" />
+                <span style={{ color: textColor }}>Easter Outreach This Saturday at Central Park</span>
+              </div>
+              <div className="flex items-start gap-1.5 leading-snug">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0 mt-1" />
+                <span style={{ color: textColor }}>Youth Retreat Registration Open (Limited Seats)</span>
+              </div>
+            </div>
           </div>
-        </GlassCard>
+          <div className="pt-2 text-right">
+            <span className="text-[8px] font-mono opacity-50 uppercase">Updated 10m ago</span>
+          </div>
+        </MultiLayerGlassCard>
+
       </div>
 
-      {/* Visitor Pipeline */}
-      <GlassCard theme={theme} className="space-y-3">
-        <div className="flex items-center justify-between pb-1 border-b border-black/5 dark:border-white/5">
-          <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5" style={{ color: theme.accent }}>
-            <HeartHandshake size={14} /> Visitor Pipeline
-          </span>
-          <span className="text-[10px] font-mono font-bold opacity-70">37 Seekers Active</span>
-        </div>
-        <div className="grid grid-cols-4 gap-2">
-          {visitorPipeline.map((v, i) => (
-            <div key={i} className="p-2 rounded-2xl bg-white/40 dark:bg-white/5 border border-white/40 text-center">
-              <span className="text-[9px] uppercase font-bold opacity-60 block truncate">{v.stage}</span>
-              <span className={`text-base font-black ${v.color}`}>{v.count}</span>
-              <span className="text-[8px] opacity-70 block truncate">{v.desc}</span>
-            </div>
-          ))}
-        </div>
-      </GlassCard>
+      {/* ========================================================= */}
+      {/* 🌟 3. மூன்றாம் வரிசை: 4 வண்ண ஆக்ஷன் பட்டன்கள் */}
+      {/* ========================================================= */}
+      <div className="grid grid-cols-4 gap-2">
+        {/* Check-In (Orange Gold Gradient) */}
+        <button 
+          type="button"
+          onClick={onOpenAttendance}
+          className="p-3 rounded-2xl border border-white/30 flex flex-col items-center justify-center gap-1 shadow-lg cursor-pointer active:scale-95 transition"
+          style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' }}
+        >
+          <MapPin size={18} className="text-white" />
+          <span className="text-[10px] font-black text-white">Check-In</span>
+        </button>
 
-      {/* Critical Care Alerts */}
-      <GlassCard theme={theme} className="space-y-2.5">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5 text-rose-500">
-            <AlertCircle size={14} /> Critical Care Alerts
-          </span>
-          <span className="text-[9px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-500 font-bold">Action Needed</span>
-        </div>
-        <div className="space-y-2">
-          {criticalCareList.map((person, idx) => (
-            <div key={idx} className="p-2.5 rounded-2xl bg-white/40 dark:bg-white/5 border border-white/40 flex items-center justify-between">
-              <div className="overflow-hidden pr-2">
-                <div className="text-xs font-bold truncate">{person.name}</div>
-                <div className="text-[10px] text-rose-500 font-medium truncate">{person.missed}</div>
-              </div>
-              <button 
-                type="button"
-                onClick={() => alert(`Calling ${person.name}...`)}
-                className="p-2 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 active:scale-95 transition cursor-pointer"
-              >
-                <Phone size={13} />
-              </button>
-            </div>
-          ))}
-        </div>
-      </GlassCard>
+        {/* Give (Red-Pink Gradient) */}
+        <button 
+          type="button"
+          onClick={onOpenFinance}
+          className="p-3 rounded-2xl border border-white/30 flex flex-col items-center justify-center gap-1 shadow-lg cursor-pointer active:scale-95 transition"
+          style={{ background: 'linear-gradient(135deg, #f43f5e 0%, #e11d48 100%)' }}
+        >
+          <Heart size={18} className="text-white fill-white/20" />
+          <span className="text-[10px] font-black text-white">Give</span>
+        </button>
 
-      {/* Campus Treasury Split */}
-      <GlassCard theme={theme} className="space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5 text-amber-500">
-            <Landmark size={14} /> Campus Treasury Split
-          </span>
-          <span className="text-[10px] font-mono text-emerald-500 font-bold">Live Ledger</span>
-        </div>
-        <div className="space-y-2">
-          {treasuryBranches.map((b, idx) => (
-            <div key={idx} className="p-2 rounded-xl bg-white/40 dark:bg-white/5 border border-white/40 space-y-1">
-              <div className="flex justify-between text-xs">
-                <span className="font-bold text-[11px] truncate">{b.name}</span>
-                <span className="font-mono text-emerald-500 font-extrabold">{b.total}</span>
-              </div>
-              <div className="w-full h-1.5 rounded-full overflow-hidden flex bg-black/10 dark:bg-white/10">
-                <div className="bg-amber-400 h-full" style={{ width: b.tithe }} />
-                <div className="bg-rose-500 h-full" style={{ width: b.offering }} />
-                <div className="bg-emerald-400 h-full" style={{ width: b.building }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </GlassCard>
+        {/* Volunteer (Emerald-Green Gradient) */}
+        <button 
+          type="button"
+          className="p-3 rounded-2xl border border-white/30 flex flex-col items-center justify-center gap-1 shadow-lg cursor-pointer active:scale-95 transition"
+          style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
+        >
+          <HandHelping size={18} className="text-white" />
+          <span className="text-[10px] font-black text-white">Volunteer</span>
+        </button>
 
-      {/* Upcoming Events Carousel */}
-      <div>
-        <div className="flex justify-between items-center mb-2 px-1">
-          <h3 className="text-sm font-extrabold">Upcoming Events</h3>
-          <span className="text-xs font-bold cursor-pointer" style={{ color: theme.accent }}>View All</span>
-        </div>
-        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none snap-x snap-mandatory">
-          {[
-            { m: 'Apr', d: '25', title: 'Sunday Worship Service', time: '08:30 AM • Main Sanctuary', img: 'https://images.unsplash.com/photo-1438032005730-c779502df39b?auto=format&fit=crop&w=400&q=80' },
-            { m: 'Apr', d: '27', title: 'Youth Bible Study', time: '06:00 PM • Room 4', img: 'https://images.unsplash.com/photo-1519682337058-a94d519337bc?auto=format&fit=crop&w=400&q=80' },
-            { m: 'May', d: '02', title: 'Kids Sunday Workshop', time: '04:00 PM • Fellowship Hall', img: 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=400&q=80' }
-          ].map((evt, idx) => (
-            <div 
-              key={idx}
-              className="min-w-[240px] p-3.5 rounded-[24px] border backdrop-blur-xl snap-start relative flex flex-col justify-between shadow-sm cursor-pointer"
-              style={{
-                background: theme.glassBg,
-                borderColor: theme.glassBorder
-              }}
-            >
-              <div 
-                className="absolute top-3.5 right-3.5 px-2 py-0.5 rounded-lg text-center border backdrop-blur-md"
-                style={{ background: 'rgba(255, 255, 255, 0.4)', borderColor: theme.glassBorder }}
-              >
-                <span className="text-[9px] font-bold uppercase block" style={{ color: theme.accent }}>{evt.m}</span>
-                <span className="text-xs font-extrabold leading-none">{evt.d}</span>
-              </div>
-              <div className="w-full h-24 rounded-2xl mb-2.5 bg-cover bg-center shadow-sm" style={{ backgroundImage: `url(${evt.img})` }} />
-              <div>
-                <h4 className="text-xs font-extrabold">{evt.title}</h4>
-                <p className="text-[11px] mt-0.5" style={{ color: theme.textMuted }}>{evt.time}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+        {/* Prayer Request (Cyan-Blue Gradient) */}
+        <button 
+          type="button"
+          className="p-3 rounded-2xl border border-white/30 flex flex-col items-center justify-center gap-1 shadow-lg cursor-pointer active:scale-95 transition"
+          style={{ background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)' }}
+        >
+          <Church size={18} className="text-white" />
+          <span className="text-[9px] font-black text-white leading-tight">Prayer Req</span>
+        </button>
       </div>
+
+      {/* ========================================================= */}
+      {/* 🌟 4. நான்காம் வரிசை: Community Feed (போட்டோ & பதிவுகள்) */}
+      {/* ========================================================= */}
+      <MultiLayerGlassCard glowColor="rgba(168, 85, 247, 0.25)" className="p-4 space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-white/10">
+          <span className="text-xs font-black tracking-wider uppercase" style={{ color: textColor }}>Community Feed</span>
+          <span className="text-[10px] text-purple-400 font-bold">2 New Posts</span>
+        </div>
+
+        {/* Feed Post 1 */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-rose-500/30 border border-rose-400/50 flex items-center justify-center font-bold text-xs text-white">
+              SM
+            </div>
+            <div>
+              <div className="text-xs font-bold leading-tight" style={{ color: textColor }}>Sarah M.</div>
+              <div className="text-[9px] opacity-60 font-mono" style={{ color: mutedTextColor }}>Just Now • Kids Church</div>
+            </div>
+          </div>
+
+          <p className="text-xs leading-relaxed" style={{ color: textColor }}>
+            Wonderful time at the Kids Art Workshop! 🎨✨ The children crafted beautiful memory verses today.
+          </p>
+
+          {/* Feed Grid Preview */}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <div className="h-28 rounded-2xl bg-amber-500/10 border border-white/10 flex items-center justify-center overflow-hidden relative">
+              <span className="text-[10px] font-mono opacity-60">Workshop Photo 1</span>
+            </div>
+            <div className="h-28 rounded-2xl bg-purple-500/10 border border-white/10 flex items-center justify-center overflow-hidden relative">
+              <span className="text-[10px] font-mono opacity-60">Sanctuary Photo 2</span>
+            </div>
+          </div>
+        </div>
+      </MultiLayerGlassCard>
 
     </div>
   );

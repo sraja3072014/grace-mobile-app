@@ -3,9 +3,9 @@
 export const DEFAULT_CAMPUSES = [
   { 
     id: 'hq', 
-    name: 'Grace Cathedral Church', 
+    name: 'Grace Central Cathedral',
     code: 'GCC-MAIN', 
-    city: 'Headquarters', 
+    city: 'Koduvai',
     isHQ: true 
   },
   { 
@@ -27,8 +27,14 @@ export const DEFAULT_CAMPUSES = [
 export const INITIAL_USER_PROFILE = {
   name: 'Raja S',
   role: 'Lead Pastor',
+  adminRole: 'Administrator',
   email: 'raja@gracechurch.org',
-  phone: '+918428044555',
+  phone: '+91 84280 44555',
+  birthDate: '',
+  conversionDate: '',
+  memberSince: '2026-10-24',
+  baptismDate: '',
+  familyMembers: [],
   city: 'Koduvai',
   address: 'Main Road, Koduvai',
   gender: 'Male',

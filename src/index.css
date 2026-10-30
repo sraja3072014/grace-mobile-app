@@ -46,3 +46,28 @@ body {
 .animate-marquee:hover {
   animation-play-state: paused; /* தொடும்போது எழுத்துக்கள் நிற்கும் */
 }
+
+@keyframes church-sheet-enter {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes profile-drawer-enter {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.church-sheet-enter {
+  animation: church-sheet-enter 240ms ease-out both;
+}
+
+.profile-drawer-enter {
+  animation: profile-drawer-enter 220ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .church-sheet-enter,
+  .profile-drawer-enter {
+    animation: none;
+  }
+}
