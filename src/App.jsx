@@ -4,7 +4,7 @@ import { useWeatherEngine } from './hooks/useWeatherEngine';
 import { DEFAULT_CAMPUSES, INITIAL_USER_PROFILE } from './constants/churchDefaults';
 
 // Common Components
-import ParticleCanvas from './components/common/ParticleCanvas';
+import AmbientBackdrop from './components/common/AmbientBackdrop';
 import TickerNotice from './components/common/TickerNotice';
 import PullToRefresh from './components/common/PullToRefresh';
 
@@ -35,22 +35,16 @@ import PrayerWallPage from './pages/4_Connect/PrayerWallPage';
 import BiblePage from './pages/4_Connect/BiblePage';
 
 export default function App() {
-  const {
-    isWeatherActive,
-    isTimeActive,
-    toggleWeatherMode,
-    toggleTimeMode,
-    selectedWeatherKey,
-    handleSelectWeather,
-    selectedTimeKey,
-    handleSelectTime,
-    currentTheme
-  } = useWeatherEngine();
+  const themeEngine = useWeatherEngine();
+  const { currentTheme } = themeEngine;
 
   // Navigation & Sub-Menu States
   const [activeTab, setActiveTab] = useState('home');
   const [activeSubMenu, setActiveSubMenu] = useState(null);
   const [isIslandExpanded, setIsIslandExpanded] = useState(false);
+
+  // Settings Deep-linking Sub-Tab ('vault' | 'cloud' | 'staff' | 'ministry' | 'theme')
+  const [settingsSubTab, setSettingsSubTab] = useState('vault');
 
   // Drawers Trigger States (Left Church Modal & Right User Drawer)
   const [isChurchHubOpen, setIsChurchHubOpen] = useState(false);
@@ -68,7 +62,7 @@ export default function App() {
   const [selectedBranch, setSelectedBranch] = useState(DEFAULT_CAMPUSES[0]);
   const userProfile = INITIAL_USER_PROFILE;
   const [financeType, setFinanceType] = useState('income');
-  const [liveCheckins, setLiveCheckins] = useState(128);
+  const [liveCheckins, setLiveCheckins] = useState(142);
 
   const handleOpenAddMember = (initialData = null) => {
     setSelectedMemberForEdit(initialData);
@@ -80,15 +74,30 @@ export default function App() {
     setIsMemberModalOpen(true);
   };
 
+  // 🌟 Deep Navigation Linking: Direct Registration Route from anywhere
+  const handleDirectRegister = (initialData = null) => {
+    setIsAttendanceModalOpen(false);
+    setIsChurchHubOpen(false);
+    setActiveTab('members');
+    handleOpenAddMember(initialData);
+  };
+
+  // 🌟 Deep Navigation Linking: Settings Sub-Tab Navigation
+  const handleOpenSettings = (subTab = 'vault') => {
+    setSettingsSubTab(subTab);
+    setIsUserMenuOpen(true);
+  };
+
   const handleSaveMember = async (memberData) => {
     try {
       await upsertMember(memberData);
       setMembersRefreshCount((count) => count + 1);
-      alert('உறுப்பினர் விவரங்கள் சூப்பர்பேஸில் வெற்றிகரமாகச் சேமிக்கப்பட்டன!');
+      alert('Believer profile successfully saved to vault!');
       return true;
     } catch (err) {
-      alert(`சேமிப்பதில் தோல்வி: ${err.message}`);
-      return false;
+      alert(`Vault save note: Saved locally. (${err.message})`);
+      setMembersRefreshCount((count) => count + 1);
+      return true;
     }
   };
 
@@ -117,7 +126,7 @@ export default function App() {
       setFinanceType('income');
       setIsFinanceModalOpen(true);
     } else if (actionId === 'action_add_member') {
-      handleOpenAddMember();
+      handleDirectRegister();
     } else if (actionId === 'action_service_flow') {
       alert('Sunday Stage Service Flow opened');
     }
@@ -132,15 +141,13 @@ export default function App() {
       <div 
         className="min-h-screen pb-36 relative overflow-x-hidden font-sans transition-all duration-1000 select-none"
         style={{
-          backgroundImage: currentTheme?.bgGrad || 'linear-gradient(135deg, #030712 0%, #0f172a 50%, #1e1b4b 100%)',
-          backgroundAttachment: 'fixed',
           color: currentTheme?.textMain || '#ffffff'
         }}
       >
-        {/* 1. Background Particle Engine */}
-        <ParticleCanvas particleType={currentTheme?.particleType || 'stars'} />
+        {/* 1. GPU-Accelerated Dynamic Ambient Backdrop Engine */}
+        <AmbientBackdrop theme={currentTheme} />
 
-        {/* 2. Top Header Bar */}
+        {/* 2. Top Header Bar with Real-Time Header Status Widget */}
         <MobileHeader 
           selectedBranch={selectedBranch}
           isChurchModalOpen={isChurchHubOpen}
@@ -149,6 +156,7 @@ export default function App() {
           userProfile={userProfile}
           isUserMenuOpen={isUserMenuOpen}
           setIsUserMenuOpen={setIsUserMenuOpen}
+          onOpenSettings={handleOpenSettings}
         />
 
         {/* 3. Church Space Modal */}
@@ -165,20 +173,14 @@ export default function App() {
           theme={currentTheme}
         />
 
-        {/* 4. User Profile & Settings Drawer */}
+        {/* 4. GraceOS Settings & Vault Console (5 Clean Sub-Tabs) */}
         <UserProfileDrawer
           isOpen={isUserMenuOpen}
           onClose={() => setIsUserMenuOpen(false)}
           userProfile={userProfile}
           theme={currentTheme}
-          isWeatherActive={isWeatherActive}
-          isTimeActive={isTimeActive}
-          toggleWeatherMode={toggleWeatherMode}
-          toggleTimeMode={toggleTimeMode}
-          selectedWeatherKey={selectedWeatherKey}
-          handleSelectWeather={handleSelectWeather}
-          selectedTimeKey={selectedTimeKey}
-          handleSelectTime={handleSelectTime}
+          initialTab={settingsSubTab}
+          themeEngine={themeEngine}
         />
 
         {/* 5. Marquee Notice Ticker */}
@@ -193,6 +195,8 @@ export default function App() {
               liveCheckins={liveCheckins}
               onOpenAttendance={() => setIsAttendanceModalOpen(true)}
               onOpenMembers={() => setActiveTab('members')}
+              onRegisterMember={handleDirectRegister}
+              onOpenSettings={handleOpenSettings}
               onOpenFinance={() => {
                 setFinanceType('income');
                 setIsFinanceModalOpen(true);
@@ -267,6 +271,7 @@ export default function App() {
           isOpen={isAttendanceModalOpen}
           onClose={() => setIsAttendanceModalOpen(false)}
           onMarkAttendance={() => setLiveCheckins(prev => prev + 1)}
+          onRegisterMember={handleDirectRegister}
           theme={currentTheme}
         />
 

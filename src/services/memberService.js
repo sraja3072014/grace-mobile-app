@@ -1,10 +1,12 @@
-import { supabase } from '../utils/supabaseClient';
+// src/services/memberService.js
+import { getSupabase } from '../utils/supabaseClient';
 
 function requireSupabase() {
-  if (!supabase) {
-    throw new Error('Supabase is not configured.');
+  const client = getSupabase();
+  if (!client) {
+    throw new Error('Local Vault mode active: Cloud Supabase is not configured.');
   }
-  return supabase;
+  return client;
 }
 
 export async function fetchAllMembers() {
@@ -32,7 +34,7 @@ export async function upsertMember(memberData) {
     }, { onConflict: 'id' });
 
   if (error) {
-    console.error('Error saving member:', error);
+    console.error('Error saving member to cloud:', error);
     throw error;
   }
 

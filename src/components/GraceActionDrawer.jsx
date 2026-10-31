@@ -167,7 +167,7 @@ export default function GraceActionDrawer({
 
         {/* Bottom Status bar */}
         <div className="pt-3 border-t border-white/10 flex items-center justify-between text-[11px] text-stone-400">
-          <span>Synced: odkxqlzmvnwcznpbrpls</span>
+          <span>GraceOS Local Vault</span>
           <span className="text-emerald-400 font-semibold flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             Online

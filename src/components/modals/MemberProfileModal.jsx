@@ -2,23 +2,24 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Save, User, Phone, Mail, MapPin, Calendar, 
-  Heart, Droplets, Sparkles, Check, Users
+  Heart, Droplets, Sparkles, Check, Users, Crown, ShieldCheck
 } from 'lucide-react';
 
 const TALENT_PRESETS = [
   'Worship Team & Vocals',
+  'Media, Sound & Live Broadcast',
+  'Sunday School & Kids Ministry',
+  'Intercession & Prayer Wall',
+  'Ushering & Hospitality',
+  'Outreach & Evangelism',
   "Men's Fellowship",
   "Women's Fellowship",
-  'Youth Fellowship',
-  'Prayer Team',
-  'Sunday School Teacher',
-  'Media & Sound Tech',
-  'Ushering & Hospitality',
-  'Outreach & Evanglism'
+  'Youth Fellowship'
 ];
 
 const RELATIONSHIP_ROLES = [
   'Head of Family',
+  'Lead Pastor / Head of Family',
   'Spouse / Wife',
   'Son',
   'Daughter',
@@ -27,6 +28,13 @@ const RELATIONSHIP_ROLES = [
   'Grandfather / Grandmother',
   'Relative / Other'
 ];
+
+const PASTORAL_KEYWORDS = ['pastor', 'rev', 'reverend', 'r.v', 'r.e.v', 'bishop', 'dr', 'doctor of divinity', 'd.d'];
+
+function isClergy(name, role) {
+  const combined = `${name || ''} ${role || ''}`.toLowerCase();
+  return PASTORAL_KEYWORDS.some(kw => combined.includes(kw));
+}
 
 export default function MemberProfileModal({ 
   isOpen, 
@@ -54,7 +62,7 @@ export default function MemberProfileModal({
     phone: '',
     email: '',
     campus: 'Headquarters',
-    area: 'Tirupur',
+    area: 'Koduvai',
     address: '',
     gps_coordinates: '',
     is_baptized: false,
@@ -82,13 +90,13 @@ export default function MemberProfileModal({
         id: generatedId,
         family_id: famId,
         house_id: initialData.house_id || generatedId,
-        household_role: initialData.household_role || 'Spouse / Wife',
+        household_role: initialData.household_role || 'Head of Family',
         gender: initialData.gender || 'Male',
         name: initialData.name || '',
         phone: initialData.phone || '',
         email: initialData.email || '',
-        area: initialData.area || 'Tirupur',
-        campus: initialData.campus || 'Headquarters',
+        area: initialData.area || 'Koduvai',
+        campus: initialData.campus || 'Main Sanctuary',
         blood_group: initialData.blood_group || 'O+',
         date_of_birth: initialData.date_of_birth || '',
         age: initialData.age || '',
@@ -118,20 +126,40 @@ export default function MemberProfileModal({
         status: 'Active',
         phone: '',
         email: '',
-        campus: 'Headquarters',
-        area: 'Tirupur',
+        campus: 'Main Sanctuary',
+        area: 'Koduvai',
         address: '',
         gps_coordinates: '',
         is_baptized: false,
         baptism_date: '',
         is_anointed: false,
         holy_spirit_baptism_date: '',
-        ministry_talents: ['Prayer Team']
+        ministry_talents: ['Worship Team & Vocals']
       });
     }
   }, [initialData, isOpen]);
 
-  // பிறந்த தேதியில் இருந்து வயது கணக்கீடு
+  // 🌟 Relationship Selection with Auto Gender Suggestion
+  const handleRelationshipChange = (role) => {
+    let suggestedGender = formData.gender;
+    const lower = role.toLowerCase();
+    
+    // Auto-Suggestions: Wife, Mother, Daughter, Sister -> Female
+    if (lower.includes('wife') || lower.includes('mother') || lower.includes('daughter') || lower.includes('sister') || lower.includes('grandmother')) {
+      suggestedGender = 'Female';
+    } 
+    // Husband, Father, Son, Brother -> Male
+    else if (lower.includes('husband') || lower.includes('father') || lower.includes('son') || lower.includes('brother') || lower.includes('grandfather')) {
+      suggestedGender = 'Male';
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      household_role: role,
+      gender: suggestedGender
+    }));
+  };
+
   const handleDobChange = (e) => {
     const dob = e.target.value;
     let calculatedAge = formData.age;
@@ -143,7 +171,6 @@ export default function MemberProfileModal({
     setFormData((prev) => ({ ...prev, date_of_birth: dob, age: calculatedAge }));
   };
 
-  // தாலந்துகள் தேர்வு / நீக்குதல்
   const handleToggleTalent = (talent) => {
     setFormData((prev) => {
       const exists = prev.ministry_talents.includes(talent);
@@ -158,9 +185,16 @@ export default function MemberProfileModal({
     e.preventDefault();
     if (isSaving) return;
 
+    // Mandatory Gender Selection Rule
+    if (!formData.gender) {
+      alert('Mandatory Gender selection required (Male or Female).');
+      return;
+    }
+
     const existingPayload = typeof formData.raw_payload === 'string'
       ? JSON.parse(formData.raw_payload)
       : formData.raw_payload || {};
+
     const payloadObject = {
       ...existingPayload,
       memberId: formData.id,
@@ -186,8 +220,6 @@ export default function MemberProfileModal({
       holySpiritBaptismDate: formData.is_anointed ? (formData.holy_spirit_baptism_date || null) : null,
       ministryTalents: formData.ministry_talents
     };
-    delete payloadObject.emergency_contact;
-    delete payloadObject.emergencyContact;
 
     const finalRecord = {
       ...formData,
@@ -199,8 +231,6 @@ export default function MemberProfileModal({
       raw_payload: payloadObject,
       updated_at: new Date().toISOString()
     };
-    delete finalRecord.emergency_contact;
-    delete finalRecord.emergencyContact;
 
     setIsSaving(true);
     try {
@@ -215,8 +245,10 @@ export default function MemberProfileModal({
 
   if (!isOpen) return null;
 
+  const clergyRecord = isClergy(formData.name, formData.household_role);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-8 px-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-8 px-4 select-none">
       <div 
         className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-300"
         onClick={onClose} 
@@ -226,26 +258,33 @@ export default function MemberProfileModal({
         className="relative z-10 w-full max-w-lg rounded-[32px] p-5 shadow-2xl max-h-[92vh] overflow-y-auto animate-in slide-in-from-top-6 fade-in duration-300"
         style={{ 
           background: 'rgba(15, 23, 42, 0.92)',
-          backdropFilter: 'blur(32px)',
-          WebkitBackdropFilter: 'blur(32px)',
-          border: '1px solid rgba(255, 255, 255, 0.20)',
-          boxShadow: '0 25px 60px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.3)',
+          backdropFilter: 'blur(40px)',
+          WebkitBackdropFilter: 'blur(40px)',
+          border: '1px solid rgba(255, 255, 255, 0.18)',
+          boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.25)',
           color: theme?.textMain || '#ffffff'
         }}
       >
-        {/* தலைப்புப் பட்டை */}
+        {/* Header Bar */}
         <div className="flex items-center justify-between pb-3 border-b border-white/10">
           <div className="flex items-center gap-2.5">
             <div 
               className="w-10 h-10 rounded-2xl flex items-center justify-center font-black text-white text-xs shadow-md border border-white/20 shrink-0"
-              style={{ background: theme?.accent || '#f59e0b' }}
+              style={{ background: clergyRecord ? '#f59e0b' : (theme?.accent || '#06b6d4') }}
             >
-              <User size={18} />
+              {clergyRecord ? <Crown size={18} /> : <User size={18} />}
             </div>
             <div>
-              <h2 className="text-sm font-black tracking-tight leading-tight">
-                {formData.household_role === 'Head of Family' ? 'Family Head Profile' : `${formData.household_role} Profile`}
-              </h2>
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-sm font-black tracking-tight leading-tight">
+                  {formData.household_role === 'Head of Family' ? 'Family Head Registration' : `${formData.household_role} Profile`}
+                </h2>
+                {clergyRecord && (
+                  <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.3)]">
+                    CLERGY / PASTORAL
+                  </span>
+                )}
+              </div>
               <span className="text-[10px] text-cyan-400 font-mono block mt-0.5">
                 Family ID: {formData.family_id} • Member ID: {formData.id}
               </span>
@@ -262,36 +301,36 @@ export default function MemberProfileModal({
 
         <form onSubmit={handleSubmit} className="pt-3.5 space-y-3.5 text-xs">
           
-          {/* 🌟 1. பெயர், உறவுமுறை & பாலினம் (Pill Buttons) */}
+          {/* 🌟 1. Demographics, Relationship & Gender */}
           <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2.5">
             <span className="text-[10px] font-mono tracking-wider opacity-60 uppercase block flex items-center gap-1.5">
               <User size={12} className="text-amber-400" />
-              1. Demographics & Relationship
+              1. Demographics & Relationship Structure
             </span>
 
-            {/* பெயர் */}
+            {/* Name */}
             <div>
-              <label className="text-[10px] font-bold block mb-1 opacity-80">Full Name (முழுப் பெயர்) *</label>
+              <label className="text-[10px] font-bold block mb-1 opacity-80">Full Name *</label>
               <input 
                 type="text" 
                 required
-                placeholder="பெயரை உள்ளிடவும்"
+                placeholder="Enter full name (e.g. Pastor Johnraja / Suresh)"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-2.5 py-2 rounded-xl border border-white/15 bg-white/5 font-bold text-xs focus:outline-none focus:border-amber-400"
+                className="w-full px-2.5 py-2 rounded-xl border border-white/15 bg-white/5 font-bold text-xs focus:outline-none focus:border-cyan-400 text-white placeholder-slate-500"
               />
             </div>
 
-            {/* குடும்ப உறவுமுறை வகை (Relationship Category) */}
+            {/* Relationship Category with Auto-Suggestion */}
             <div>
               <label className="text-[10px] font-bold block mb-1 opacity-80 flex items-center gap-1">
                 <Users size={11} className="text-cyan-400" />
-                Relationship Category (குடும்ப உறவுமுறை) *
+                Relationship Category (Household Role) *
               </label>
               <select 
                 value={formData.household_role}
-                onChange={(e) => setFormData({ ...formData, household_role: e.target.value })}
-                className="w-full px-2.5 py-2 rounded-xl border border-white/15 bg-black/60 text-xs font-semibold focus:outline-none text-white"
+                onChange={(e) => handleRelationshipChange(e.target.value)}
+                className="w-full px-2.5 py-2 rounded-xl border border-white/15 bg-slate-900 text-xs font-semibold focus:outline-none text-white cursor-pointer"
               >
                 {RELATIONSHIP_ROLES.map((role) => (
                   <option key={role} value={role}>{role}</option>
@@ -299,9 +338,11 @@ export default function MemberProfileModal({
               </select>
             </div>
 
-            {/* பாலினம் (Male / Female Pill Buttons) */}
+            {/* Mandatory Gender Selection Buttons */}
             <div>
-              <label className="text-[10px] font-bold block mb-1 opacity-80">Gender (பாலினம்) *</label>
+              <label className="text-[10px] font-bold block mb-1 opacity-80">
+                Gender (Mandatory) *
+              </label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -312,7 +353,7 @@ export default function MemberProfileModal({
                       : 'border-white/10 bg-white/5 opacity-70 hover:opacity-100'
                   }`}
                 >
-                  <span>👨 Male (ஆண்)</span>
+                  <span>👨 Male</span>
                   {formData.gender === 'Male' && <Check size={12} strokeWidth={3} />}
                 </button>
 
@@ -325,13 +366,13 @@ export default function MemberProfileModal({
                       : 'border-white/10 bg-white/5 opacity-70 hover:opacity-100'
                   }`}
                 >
-                  <span>👩 Female (பெண்)</span>
+                  <span>👩 Female</span>
                   {formData.gender === 'Female' && <Check size={12} strokeWidth={3} />}
                 </button>
               </div>
             </div>
 
-            {/* பிறந்த தேதி, வயது, ரத்த வகை */}
+            {/* Date of Birth, Age, Blood Group */}
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="text-[10px] font-bold block mb-1 opacity-80">Date of Birth</label>
@@ -339,17 +380,17 @@ export default function MemberProfileModal({
                   type="date" 
                   value={formData.date_of_birth}
                   onChange={handleDobChange}
-                  className="w-full px-2 py-1.5 rounded-xl border border-white/15 bg-white/5 text-[11px] focus:outline-none font-mono"
+                  className="w-full px-2 py-1.5 rounded-xl border border-white/15 bg-white/5 text-[11px] focus:outline-none font-mono text-white"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] font-bold block mb-1 opacity-80">Age (வயது)</label>
+                <label className="text-[10px] font-bold block mb-1 opacity-80">Age</label>
                 <input 
                   type="number" 
                   value={formData.age}
                   onChange={(e) => setFormData({ ...formData, age: e.target.value })}
-                  className="w-full px-2 py-1.5 rounded-xl border border-white/15 bg-white/5 text-[11px] focus:outline-none font-mono"
+                  className="w-full px-2 py-1.5 rounded-xl border border-white/15 bg-white/5 text-[11px] focus:outline-none font-mono text-white"
                 />
               </div>
 
@@ -358,216 +399,189 @@ export default function MemberProfileModal({
                 <select 
                   value={formData.blood_group}
                   onChange={(e) => setFormData({ ...formData, blood_group: e.target.value })}
-                  className="w-full px-2 py-1.5 rounded-xl border border-white/15 bg-black/60 text-[11px] font-mono focus:outline-none"
+                  className="w-full px-2 py-1.5 rounded-xl border border-white/15 bg-slate-900 text-[11px] focus:outline-none text-white cursor-pointer"
                 >
-                  <option value="A+">A+</option>
-                  <option value="A-">A-</option>
-                  <option value="B+">B+</option>
-                  <option value="B-">B-</option>
-                  <option value="O+">O+</option>
-                  <option value="O-">O-</option>
-                  <option value="AB+">AB+</option>
-                  <option value="AB-">AB-</option>
+                  {['A+', 'B+', 'O+', 'AB+', 'A-', 'B-', 'O-', 'AB-'].map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
                 </select>
               </div>
             </div>
-
-            {/* திருமண நாள் */}
-            <div>
-              <label className="text-[10px] font-bold block mb-1 opacity-80 flex items-center gap-1">
-                <Heart size={11} className="text-rose-400" />
-                Wedding Anniversary (திருமண நாள்)
-              </label>
-              <input 
-                type="date" 
-                value={formData.wedding_anniversary || ''}
-                onChange={(e) => setFormData({ ...formData, wedding_anniversary: e.target.value })}
-                className="w-full px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs focus:outline-none font-mono"
-              />
-            </div>
           </div>
 
-          {/* 🌟 2. தொடர்பு விவரங்கள் (Mobile, Email, Location) */}
+          {/* 🌟 2. Contact & Church Campus Location */}
           <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2.5">
             <span className="text-[10px] font-mono tracking-wider opacity-60 uppercase block flex items-center gap-1.5">
-              <Phone size={12} className="text-emerald-400" />
+              <Phone size={12} className="text-cyan-400" />
               2. Contact & Location
             </span>
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] font-bold block mb-1 opacity-80">Mobile Number *</label>
+                <label className="text-[10px] font-bold block mb-1 opacity-80">Phone Number *</label>
                 <input 
                   type="tel" 
                   required
-                  placeholder="949614621"
+                  placeholder="10-digit mobile"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs font-mono focus:outline-none focus:border-emerald-400"
+                  className="w-full px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs font-mono focus:outline-none focus:border-cyan-400 text-white"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] font-bold block mb-1 opacity-80">Email ID</label>
+                <label className="text-[10px] font-bold block mb-1 opacity-80">Email</label>
                 <input 
                   type="email" 
-                  placeholder="name@gmail.com"
+                  placeholder="member@gmail.com"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs font-mono focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold block mb-1 opacity-80">Area / Town</label>
-                <input 
-                  type="text" 
-                  placeholder="Tirupur"
-                  value={formData.area}
-                  onChange={(e) => setFormData({ ...formData, area: e.target.value })}
-                  className="w-full px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold block mb-1 opacity-80">Campus</label>
-                <input 
-                  type="text" 
-                  placeholder="Headquarters"
-                  value={formData.campus}
-                  onChange={(e) => setFormData({ ...formData, campus: e.target.value })}
-                  className="w-full px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs focus:outline-none"
+                  className="w-full px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs font-mono focus:outline-none focus:border-cyan-400 text-white"
                 />
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] font-bold block mb-1 opacity-80">Campus</label>
+                <select 
+                  value={formData.campus}
+                  onChange={(e) => setFormData({ ...formData, campus: e.target.value })}
+                  className="w-full px-2 py-1.5 rounded-xl border border-white/15 bg-slate-900 text-xs focus:outline-none text-white cursor-pointer"
+                >
+                  <option value="Main Sanctuary">Main Sanctuary</option>
+                  <option value="Koduvai Branch">Koduvai Branch</option>
+                  <option value="City Campus">City Campus</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold block mb-1 opacity-80">Area / Suburb</label>
+                <input 
+                  type="text" 
+                  value={formData.area}
+                  onChange={(e) => setFormData({ ...formData, area: e.target.value })}
+                  className="w-full px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs focus:outline-none text-white"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold block mb-1 opacity-80">Residential Address</label>
+              <input 
+                type="text" 
+                placeholder="Door No, Street Name, City"
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                className="w-full px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs focus:outline-none text-white"
+              />
+            </div>
           </div>
 
-          {/* 🌟 3. ஆன்மீக நிலைகள் (டிக் செய்தால் மட்டுமே விரியும் தேதிகள்) */}
+          {/* 🌟 3. Spiritual Milestone & Baptism */}
           <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2.5">
             <span className="text-[10px] font-mono tracking-wider opacity-60 uppercase block flex items-center gap-1.5">
               <Droplets size={12} className="text-sky-400" />
-              3. Spiritual Milestones
+              3. Spiritual Milestones & Sacraments
             </span>
 
-            {/* நீர் ஞானஸ்நானம் செக்பாக்ஸ் */}
-            <div className="p-2.5 rounded-xl bg-black/20 border border-white/10 space-y-2">
+            {/* Water Baptism */}
+            <div className="p-2.5 rounded-xl border border-white/10 bg-white/[0.02] space-y-2">
               <div className="flex items-center justify-between">
-                <div>
-                  <span className="font-bold text-[11px] block">Water Baptized (ஞானஸ்நானம்)</span>
-                  <span className="text-[9px] opacity-60">டிக் செய்தால் ஞானஸ்நான தேதி உள்ளிடலாம்</span>
-                </div>
+                <span className="text-xs font-bold flex items-center gap-1.5">
+                  <Droplets size={13} className="text-sky-400" />
+                  Water Baptism (ஞானஸ்நானம்)
+                </span>
                 <input 
                   type="checkbox"
                   checked={formData.is_baptized}
-                  onChange={(e) => setFormData({ 
-                    ...formData, 
-                    is_baptized: e.target.checked,
-                    baptism_date: e.target.checked ? formData.baptism_date : ''
-                  })}
-                  className="w-5 h-5 accent-emerald-500 rounded cursor-pointer"
+                  onChange={(e) => setFormData({ ...formData, is_baptized: e.target.checked })}
+                  className="w-4 h-4 rounded accent-sky-400 cursor-pointer"
                 />
               </div>
-
-              {/* டிக் பண்ணா மட்டும் ஓபன் ஆகும் Baptism Date */}
               {formData.is_baptized && (
-                <div className="pt-2 border-t border-white/10 animate-in fade-in duration-200">
-                  <label className="text-[10px] font-mono font-bold text-emerald-400 block mb-1">
-                    Baptism Date (ஞானஸ்நானம் பெற்ற நாள்) *
-                  </label>
+                <div>
+                  <label className="text-[9px] font-bold block mb-1 opacity-80">Date of Baptism</label>
                   <input 
                     type="date"
-                    required={formData.is_baptized}
-                    value={formData.baptism_date || ''}
+                    value={formData.baptism_date}
                     onChange={(e) => setFormData({ ...formData, baptism_date: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-xl border border-emerald-500/30 bg-white/5 text-xs font-mono focus:outline-none"
+                    className="w-full px-2 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs font-mono text-white"
                   />
                 </div>
               )}
             </div>
 
-            {/* பரிசுத்த ஆவியின் அபிஷேகம் செக்பாக்ஸ் */}
-            <div className="p-2.5 rounded-xl bg-black/20 border border-white/10 space-y-2">
+            {/* Holy Spirit Baptism */}
+            <div className="p-2.5 rounded-xl border border-white/10 bg-white/[0.02] space-y-2">
               <div className="flex items-center justify-between">
-                <div>
-                  <span className="font-bold text-[11px] block">Holy Spirit Anointed (ஆவியின் அபிஷேகம்)</span>
-                  <span className="text-[9px] opacity-60">டிக் செய்தால் அபிஷேக தேதி உள்ளிடலாம்</span>
-                </div>
+                <span className="text-xs font-bold flex items-center gap-1.5">
+                  <Sparkles size={13} className="text-amber-400" />
+                  Holy Spirit Anointing (அபிஷேகம்)
+                </span>
                 <input 
                   type="checkbox"
                   checked={formData.is_anointed}
-                  onChange={(e) => setFormData({ 
-                    ...formData, 
-                    is_anointed: e.target.checked,
-                    holy_spirit_baptism_date: e.target.checked ? formData.holy_spirit_baptism_date : ''
-                  })}
-                  className="w-5 h-5 accent-amber-500 rounded cursor-pointer"
+                  onChange={(e) => setFormData({ ...formData, is_anointed: e.target.checked })}
+                  className="w-4 h-4 rounded accent-amber-400 cursor-pointer"
                 />
               </div>
+            </div>
 
-              {/* டிக் பண்ணா மட்டும் ஓபன் ஆகும் Anointing Date */}
-              {formData.is_anointed && (
-                <div className="pt-2 border-t border-white/10 animate-in fade-in duration-200">
-                  <label className="text-[10px] font-mono font-bold text-amber-400 block mb-1">
-                    Anointing Date (அபிஷேகம் பெற்ற நாள்) *
-                  </label>
-                  <input 
-                    type="date"
-                    required={formData.is_anointed}
-                    value={formData.holy_spirit_baptism_date || ''}
-                    onChange={(e) => setFormData({ ...formData, holy_spirit_baptism_date: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-xl border border-amber-500/30 bg-white/5 text-xs font-mono focus:outline-none"
-                  />
-                </div>
-              )}
+            {/* Wedding Anniversary */}
+            <div>
+              <label className="text-[10px] font-bold block mb-1 opacity-80 flex items-center gap-1">
+                <Heart size={11} className="text-rose-400" />
+                Wedding Anniversary Date
+              </label>
+              <input 
+                type="date"
+                value={formData.wedding_anniversary}
+                onChange={(e) => setFormData({ ...formData, wedding_anniversary: e.target.value })}
+                className="w-full px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs font-mono text-white"
+              />
             </div>
           </div>
 
-          {/* 🌟 4. சபை ஊழியங்கள் & தாலந்துகள் (Pill Tag Buttons) */}
+          {/* 🌟 4. Ministry Talents */}
           <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono tracking-wider opacity-60 uppercase flex items-center gap-1.5">
-                <Sparkles size={12} className="text-pink-400" />
-                4. Ministry Talents (ஊழியங்கள்)
-              </span>
-              <span className="text-[10px] font-bold text-cyan-400">
-                {formData.ministry_talents.length} Selected
-              </span>
-            </div>
+            <span className="text-[10px] font-mono tracking-wider opacity-60 uppercase block flex items-center gap-1.5">
+              <Sparkles size={12} className="text-amber-400" />
+              4. Ministry & Service Talents
+            </span>
 
             <div className="flex flex-wrap gap-1.5 pt-1">
               {TALENT_PRESETS.map((talent) => {
                 const isSelected = formData.ministry_talents.includes(talent);
                 return (
                   <button
-                    type="button"
                     key={talent}
+                    type="button"
                     onClick={() => handleToggleTalent(talent)}
-                    className={`px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition cursor-pointer active:scale-95 ${
                       isSelected 
-                        ? 'border-emerald-400 bg-emerald-500/25 text-emerald-300 shadow-sm' 
-                        : 'border-white/10 bg-white/5 opacity-70 hover:opacity-100 hover:border-white/20'
+                        ? 'border-cyan-400 bg-cyan-500/25 text-cyan-300' 
+                        : 'border-white/10 bg-white/5 opacity-70 hover:opacity-100'
                     }`}
                   >
-                    {isSelected && <Check size={12} strokeWidth={3} />}
-                    <span>{talent}</span>
+                    {talent}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* சேமிக்கும் பட்டன் */}
+          {/* Save Button */}
           <button
             type="submit"
             disabled={isSaving}
-            className="w-full py-3 rounded-2xl font-black text-xs text-white shadow-lg transition active:scale-95 cursor-pointer flex items-center justify-center gap-2 mt-2 disabled:opacity-60 disabled:cursor-wait"
-            style={{ background: theme?.accent || '#f59e0b' }}
+            className="w-full py-3 rounded-2xl text-white font-extrabold text-xs shadow-xl active:scale-95 transition cursor-pointer flex items-center justify-center gap-2"
+            style={{ background: clergyRecord ? '#f59e0b' : (theme?.accent || '#06b6d4') }}
           >
-            <Save size={15} />
-            <span>{isSaving ? 'Saving...' : 'Save Member to Supabase'}</span>
+            <Save size={14} />
+            <span>{isSaving ? 'Saving to Vault...' : 'Save Believer Profile to Vault'}</span>
           </button>
         </form>
-
       </div>
     </div>
   );

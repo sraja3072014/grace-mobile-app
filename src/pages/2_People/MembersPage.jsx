@@ -3,12 +3,41 @@ import React, { useEffect, useState } from 'react';
 import { 
   Search, Phone, UserPlus, Layers, QrCode, 
   MapPin, Users, Cloud, CloudOff, Plus, X, 
-  Calendar, Mail, Droplets, Flame, Building2, Trash2, Pencil
+  Calendar, Mail, Droplets, Flame, Building2, Trash2, Pencil,
+  Crown, ShieldCheck
 } from 'lucide-react';
 import GlassCard from '../../components/common/GlassCard';
 import MemberIdCardModal from '../../components/modals/MemberIdCardModal';
 import { useVaultStorage } from '../../hooks/useVaultStorage';
 import { deleteMemberById, upsertMember } from '../../services/memberService';
+
+// 🌟 Clergy & Pastoral Precedence Keywords
+export const PASTORAL_KEYWORDS = ['pastor', 'rev', 'reverend', 'r.v', 'r.e.v', 'bishop', 'dr', 'doctor of divinity', 'd.d'];
+
+export function isClergyMember(member) {
+  if (!member) return false;
+  const text = `${member.name || ''} ${member.roleInFamily || ''} ${member.role || ''} ${member.household_role || ''}`.toLowerCase();
+  return PASTORAL_KEYWORDS.some(kw => text.includes(kw));
+}
+
+export function isLeaderMember(member) {
+  if (!member || isClergyMember(member)) return false;
+  const text = `${member.name || ''} ${member.roleInFamily || ''} ${member.role || ''}`.toLowerCase();
+  const talents = member.ministryTalents || member.ministry_talents || [];
+  return talents.length > 0 || /leader|elder|deacon|committee|coordinator|director|in-charge/i.test(text);
+}
+
+export function autoSuggestGender(role, currentGender) {
+  if (!role) return currentGender || 'Male';
+  const lower = role.toLowerCase();
+  if (lower.includes('wife') || lower.includes('mother') || lower.includes('daughter') || lower.includes('sister') || lower.includes('grandmother')) {
+    return 'Female';
+  }
+  if (lower.includes('husband') || lower.includes('father') || lower.includes('son') || lower.includes('brother') || lower.includes('grandfather')) {
+    return 'Male';
+  }
+  return currentGender || 'Male';
+}
 
 const BACKUP_MEMBERS_DATA = [
   {
@@ -643,30 +672,54 @@ export default function MembersPage({
     setIsSubMemberModalOpen(true);
   };
 
-  const filterOptions = ['All', 'Families', 'Leaders', 'To be baptized'];
+  const filterOptions = ['All', 'Clergy', 'Leaders', 'Families', 'To be baptized'];
 
-  const filteredFamilies = normalizedFamilies.filter((fam) => {
+  const filteredFamilies = React.useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const head = fam.headMember;
-    const searchValues = [
-      fam.familyId, fam.familyName, fam.address, fam.area, fam.campus,
-      head.name, head.memberId, head.phone, head.email, head.bloodGroup,
-      ...fam.members.flatMap((member) => [
-        member.name, member.memberId, member.phone, member.roleInFamily, member.bloodGroup
-      ])
-    ];
-    const matchesSearch = searchValues.some(value => String(value || '').toLowerCase().includes(q));
 
-    if (!matchesSearch) return false;
-    if (activeFilter === 'Families') return fam.members.length > 0;
-    if (activeFilter === 'Leaders') {
-      return head.ministryTalents?.length > 0 || /pastor|leader/i.test(head.roleInFamily || head.name);
-    }
-    if (activeFilter === 'To be baptized') {
-      return !head.isBaptized || fam.members.some(member => !member.isBaptized);
-    }
-    return true;
-  });
+    const matched = normalizedFamilies.filter((fam) => {
+      const head = fam.headMember;
+      const searchValues = [
+        fam.familyId, fam.familyName, fam.address, fam.area, fam.campus,
+        head.name, head.memberId, head.phone, head.email, head.bloodGroup, head.roleInFamily,
+        ...(head.ministryTalents || []),
+        ...fam.members.flatMap((member) => [
+          member.name, member.memberId, member.phone, member.roleInFamily, member.bloodGroup,
+          ...(member.ministryTalents || [])
+        ])
+      ];
+      const matchesSearch = !q || searchValues.some(value => String(value || '').toLowerCase().includes(q));
+
+      if (!matchesSearch) return false;
+      if (activeFilter === 'Families') return fam.members.length > 0;
+      if (activeFilter === 'Clergy') return isClergyMember(head) || fam.members.some(isClergyMember);
+      if (activeFilter === 'Leaders') {
+        return (isLeaderMember(head) || fam.members.some(isLeaderMember)) && !isClergyMember(head);
+      }
+      if (activeFilter === 'To be baptized') {
+        return !head.isBaptized || fam.members.some(member => !member.isBaptized);
+      }
+      return true;
+    });
+
+    // 🌟 Sort & Precedence Ranking:
+    // Pastoral Clergy records are ranked at the top, followed by Leaders, followed by Members
+    return matched.sort((a, b) => {
+      const aIsClergy = isClergyMember(a.headMember) || a.members.some(isClergyMember);
+      const bIsClergy = isClergyMember(b.headMember) || b.members.some(isClergyMember);
+
+      if (aIsClergy && !bIsClergy) return -1;
+      if (!aIsClergy && bIsClergy) return 1;
+
+      const aIsLeader = isLeaderMember(a.headMember) || a.members.some(isLeaderMember);
+      const bIsLeader = isLeaderMember(b.headMember) || b.members.some(isLeaderMember);
+
+      if (aIsLeader && !bIsLeader) return -1;
+      if (!aIsLeader && bIsLeader) return 1;
+
+      return 0;
+    });
+  }, [normalizedFamilies, searchQuery, activeFilter]);
 
   const totalSouls = normalizedFamilies.reduce((acc, f) => acc + 1 + f.members.length, 0);
 
@@ -794,11 +847,23 @@ export default function MembersPage({
                     {head.name.substring(0, 2).toUpperCase()}
                   </div>
                   <div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <h3 className="text-xs font-extrabold">{head.name}</h3>
-                      <span className="text-[9px] font-black px-1.5 py-0.2 rounded-md bg-amber-500/20 text-amber-500">
-                        {head.roleInFamily.toUpperCase()}
-                      </span>
+                      {isClergyMember(head) ? (
+                        <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.25)] flex items-center gap-1">
+                          <Crown size={10} className="text-amber-400" />
+                          {head.roleInFamily.toUpperCase()}
+                        </span>
+                      ) : isLeaderMember(head) ? (
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/40 flex items-center gap-1">
+                          <ShieldCheck size={10} className="text-sky-400" />
+                          {head.roleInFamily.toUpperCase()}
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-white/10 text-slate-300 border border-white/10">
+                          {head.roleInFamily.toUpperCase()}
+                        </span>
+                      )}
                     </div>
 
                     <div className="text-[10px] opacity-70 font-mono mt-0.5">
@@ -954,11 +1019,21 @@ export default function MembersPage({
                           className="p-2.5 rounded-2xl bg-black/5 dark:bg-white/5 border border-white/20 flex items-center justify-between"
                         >
                           <div>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <h5 className="text-xs font-bold">{m.name}</h5>
-                              <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded-md bg-white/20">
-                                {m.roleInFamily}
-                              </span>
+                              {isClergyMember(m) ? (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-0.5">
+                                  <Crown size={9} /> {m.roleInFamily}
+                                </span>
+                              ) : isLeaderMember(m) ? (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/40 flex items-center gap-0.5">
+                                  <ShieldCheck size={9} /> {m.roleInFamily}
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded-md bg-white/20">
+                                  {m.roleInFamily}
+                                </span>
+                              )}
                             </div>
                             <span className="text-[9px] opacity-60 font-mono">
                               ID: {m.memberId} • Blood: <strong className="text-rose-400">{m.bloodGroup}</strong>
@@ -1046,6 +1121,34 @@ export default function MembersPage({
                     onChange={(e) => setHeadForm({ ...headForm, name: e.target.value })}
                     className="w-full px-3 py-2 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 font-bold focus:outline-none"
                   />
+                </div>
+
+                <div className="col-span-2">
+                  <label className="text-[10px] font-bold block mb-1">Gender (Mandatory) *</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setHeadForm({ ...headForm, gender: 'Male' })}
+                      className={`py-1.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        headForm.gender === 'Male'
+                          ? 'border-sky-400 bg-sky-500/20 text-sky-300 font-black'
+                          : 'border-white/10 bg-white/5 opacity-70'
+                      }`}
+                    >
+                      👨 Male
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHeadForm({ ...headForm, gender: 'Female' })}
+                      className={`py-1.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        headForm.gender === 'Female'
+                          ? 'border-pink-400 bg-pink-500/20 text-pink-300 font-black'
+                          : 'border-white/10 bg-white/5 opacity-70'
+                      }`}
+                    >
+                      👩 Female
+                    </button>
+                  </div>
                 </div>
 
                 <div>
@@ -1180,14 +1283,19 @@ export default function MembersPage({
                       value={m.roleInFamily} 
                       onChange={(e) => {
                         const copy = [...initialMembers];
-                        copy[idx].roleInFamily = e.target.value;
+                        const role = e.target.value;
+                        copy[idx].roleInFamily = role;
+                        copy[idx].gender = autoSuggestGender(role, copy[idx].gender);
                         setInitialMembers(copy);
                       }}
-                      className="px-1 py-1 rounded-lg bg-transparent border border-white/10 text-[10px] focus:outline-none"
+                      className="px-1 py-1 rounded-lg bg-slate-900 border border-white/10 text-[10px] focus:outline-none text-white"
                     >
                       <option value="Spouse / Wife">Spouse / Wife</option>
+                      <option value="Son">Son</option>
+                      <option value="Daughter">Daughter</option>
                       <option value="Son / Daughter">Son / Daughter</option>
                       <option value="Father / Mother">Father / Mother</option>
+                      <option value="Brother / Sister">Brother / Sister</option>
                     </select>
                     <button 
                       type="button" 
@@ -1253,10 +1361,16 @@ export default function MembersPage({
                   <label className="text-[10px] font-bold block mb-1">Relationship</label>
                   <select
                     value={subForm.roleInFamily}
-                    onChange={(e) => setSubForm({ ...subForm, roleInFamily: e.target.value })}
+                    onChange={(e) => {
+                      const role = e.target.value;
+                      const gender = autoSuggestGender(role, subForm.gender);
+                      setSubForm({ ...subForm, roleInFamily: role, gender });
+                    }}
                     className="w-full px-3 py-2 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 focus:outline-none cursor-pointer"
                   >
                     <option value="Spouse / Wife">Spouse / Wife</option>
+                    <option value="Son">Son</option>
+                    <option value="Daughter">Daughter</option>
                     <option value="Son / Daughter">Son / Daughter</option>
                     <option value="Father / Mother">Father / Mother</option>
                     <option value="Brother / Sister">Brother / Sister</option>
@@ -1275,6 +1389,35 @@ export default function MembersPage({
                       <option key={b} value={b}>{b}</option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              {/* Gender Selector for Sub-Member */}
+              <div>
+                <label className="text-[10px] font-bold block mb-1">Gender *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSubForm({ ...subForm, gender: 'Male' })}
+                    className={`py-1.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                      subForm.gender === 'Male'
+                        ? 'border-sky-400 bg-sky-500/25 text-sky-300'
+                        : 'border-white/10 bg-white/5 opacity-70'
+                    }`}
+                  >
+                    👨 Male
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSubForm({ ...subForm, gender: 'Female' })}
+                    className={`py-1.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                      subForm.gender === 'Female'
+                        ? 'border-pink-400 bg-pink-500/25 text-pink-300'
+                        : 'border-white/10 bg-white/5 opacity-70'
+                    }`}
+                  >
+                    👩 Female
+                  </button>
                 </div>
               </div>
 

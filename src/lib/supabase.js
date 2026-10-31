@@ -1,8 +1,10 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = 'https://odkxqlzmvnwcznpbrpls.supabase.co'
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-export const supabase = supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null
+// src/lib/supabase.js
+// Re-export dynamically initialized client from zero-hardcode local vault
+export { 
+  supabase, 
+  getSupabase, 
+  isVaultConfigured, 
+  getVaultCredentials, 
+  saveVaultCredentials, 
+  testSupabaseConnection 
+} from '../utils/supabaseClient';
