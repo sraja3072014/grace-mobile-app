@@ -2,6 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 const VAULT_STORAGE_KEY = 'grace_mobile_vault_credentials';
+export const PAIRING_PAYLOAD_PREFIX = 'graceos://pair/';
 
 // Simple reversible XOR + Base64 vault encryption to prevent plaintext secrets storage on device
 const VAULT_SALT = 'GraceOS_Mobile_Vault_Key_2026';
@@ -12,7 +13,7 @@ function encryptVaultString(str) {
     const saltBytes = new TextEncoder().encode(VAULT_SALT);
     const xorBytes = bytes.map((b, i) => b ^ saltBytes[i % saltBytes.length]);
     return btoa(String.fromCharCode(...xorBytes));
-  } catch (e) {
+  } catch {
     return btoa(str);
   }
 }
@@ -26,7 +27,7 @@ function decryptVaultString(str) {
     const saltBytes = new TextEncoder().encode(VAULT_SALT);
     const xorBytes = bytes.map((b, i) => b ^ saltBytes[i % saltBytes.length]);
     return new TextDecoder().decode(xorBytes);
-  } catch (e) {
+  } catch {
     try {
       return atob(str);
     } catch {
@@ -40,7 +41,9 @@ function decryptVaultString(str) {
  */
 export function getVaultCredentials() {
   try {
-    const stored = localStorage.getItem(VAULT_STORAGE_KEY);
+    const stored = typeof localStorage !== 'undefined'
+      ? localStorage.getItem(VAULT_STORAGE_KEY)
+      : null;
     if (stored) {
       const parsed = JSON.parse(stored);
       return {
@@ -86,7 +89,9 @@ export function saveVaultCredentials(supabaseUrl, supabaseAnonKey) {
     connectedAt: new Date().toISOString()
   };
 
-  localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(payload));
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(payload));
+  }
   _activeClient = null; // Reset singleton client to refresh
   notifyVaultChange();
 }
@@ -95,7 +100,9 @@ export function saveVaultCredentials(supabaseUrl, supabaseAnonKey) {
  * Clear vault credentials
  */
 export function clearVaultCredentials() {
-  localStorage.removeItem(VAULT_STORAGE_KEY);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(VAULT_STORAGE_KEY);
+  }
   _activeClient = null;
   notifyVaultChange();
 }
@@ -111,6 +118,65 @@ export function isVaultConfigured() {
     supabaseUrl.startsWith('https://') &&
     supabaseAnonKey.length > 20
   );
+}
+
+/**
+ * Persist scanned credentials and rebuild the active client immediately.
+ * This is the single entry point used by the mobile pairing flow.
+ */
+export function configureSupabaseSession(supabaseUrl, supabaseAnonKey) {
+  const url = (supabaseUrl || '').trim();
+  const key = (supabaseAnonKey || '').trim();
+
+  if (!url || !key || !url.startsWith('https://')) {
+    throw new Error('A valid Supabase HTTPS URL and anon key are required.');
+  }
+
+  saveVaultCredentials(url, key);
+  return getSupabase();
+}
+
+function encodeBase64Url(value) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function decodeBase64Url(value) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4);
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+/** Create a compact QR-safe pairing string from portal credentials. */
+export function createPairingPayload({ campus = 'Headquarters' } = {}) {
+  return `${PAIRING_PAYLOAD_PREFIX}${encodeBase64Url(JSON.stringify({
+    supabaseUrl: import.meta.env?.VITE_SUPABASE_URL || '',
+    supabaseAnonKey: import.meta.env?.VITE_SUPABASE_ANON_KEY || '',
+    campus,
+    issuedAt: Date.now()
+  }))}`;
+}
+
+/** Decode either the compact QR format or the raw JSON requested by the portal contract. */
+export function parsePairingPayload(rawPayload) {
+  const raw = String(rawPayload || '').trim();
+  if (!raw) throw new Error('The QR code was empty.');
+
+  try {
+    const json = raw.startsWith(PAIRING_PAYLOAD_PREFIX)
+      ? decodeBase64Url(raw.slice(PAIRING_PAYLOAD_PREFIX.length))
+      : raw;
+    const payload = JSON.parse(json);
+    if (!payload.supabaseUrl || !payload.supabaseAnonKey) {
+      throw new Error('This QR code does not contain Supabase credentials.');
+    }
+    return payload;
+  } catch (error) {
+    throw new Error(error.message || 'Unable to read the GraceOS pairing QR code.', { cause: error });
+  }
 }
 
 // Unified singleton cache
@@ -167,7 +233,9 @@ export async function testSupabaseConnection(testUrl, testKey) {
 }
 
 function notifyVaultChange() {
-  window.dispatchEvent(new CustomEvent('grace_vault_credentials_changed'));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('grace_vault_credentials_changed'));
+  }
 }
 
 /**

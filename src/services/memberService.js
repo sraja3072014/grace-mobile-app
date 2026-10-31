@@ -5,6 +5,12 @@ import { sanitizeMemberPayload } from '../utils/schemaSanitizer';
 export const MEMBERS_CACHE_KEY = 'graceos_vault_members';
 export const MEMBERS_SYNC_META_KEY = 'grace_members_sync_meta';
 
+function notifyOfflineVault(reason = 'Cloud unavailable') {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('grace_offline_vault_active', { detail: { reason } }));
+  }
+}
+
 /**
  * Retrieve cached members from LocalStorage
  */
@@ -94,6 +100,7 @@ export async function fetchAllMembers(options = {}) {
   // 1. Explicitly offline: serve cached directory
   if (isOffline) {
     console.info('[memberService] Offline mode active: Serving cached member directory');
+    notifyOfflineVault('Device is offline');
     return getCachedMembers();
   }
 
@@ -101,6 +108,7 @@ export async function fetchAllMembers(options = {}) {
   const client = getSupabase();
   if (!client) {
     console.info('[memberService] Cloud client unconfigured: Serving cached member directory');
+    notifyOfflineVault('No cloud pairing configured');
     return getCachedMembers();
   }
 
@@ -115,9 +123,11 @@ export async function fetchAllMembers(options = {}) {
       console.warn('[memberService] Supabase fetch error, serving cached directory:', error);
       const cached = getCachedMembers();
       if (cached && cached.length > 0) {
+        notifyOfflineVault(error.message || 'Supabase fetch failed');
         return cached;
       }
-      throw error;
+      notifyOfflineVault(error.message || 'Supabase fetch failed');
+      return [];
     }
 
     if (Array.isArray(data)) {
@@ -131,9 +141,11 @@ export async function fetchAllMembers(options = {}) {
     console.warn('[memberService] Fetch exception, gracefully serving cached directory:', err);
     const cached = getCachedMembers();
     if (cached && cached.length > 0) {
+      notifyOfflineVault(err.message || 'Network request failed');
       return cached;
     }
-    throw err;
+    notifyOfflineVault(err.message || 'Network request failed');
+    return [];
   }
 }
 
@@ -204,26 +216,29 @@ export async function batchUpsertMembers(records = [], removedIds = []) {
 
   // 2. Single Atomic Batch Upsert to Cloud
   if (sanitizedBatch.length > 0) {
-    const { error: upsertError } = await client
-      .from('members')
-      .upsert(sanitizedBatch, { onConflict: 'id' });
+    try {
+      const { error: upsertError } = await client
+        .from('members')
+        .upsert(sanitizedBatch, { onConflict: 'id' });
 
-    if (upsertError) {
-      console.error('Error in batch member upsert:', upsertError);
-      throw upsertError;
+      if (upsertError) throw upsertError;
+    } catch (error) {
+      notifyOfflineVault(error.message || 'Cloud upsert failed');
+      return true;
     }
   }
 
   // 3. Single Atomic Batch Delete in Cloud
   if (Array.isArray(removedIds) && removedIds.length > 0) {
-    const { error: deleteError } = await client
-      .from('members')
-      .delete()
-      .in('id', removedIds);
+    try {
+      const { error: deleteError } = await client
+        .from('members')
+        .delete()
+        .in('id', removedIds);
 
-    if (deleteError) {
-      console.error('Error in batch member deletion:', deleteError);
-      throw deleteError;
+      if (deleteError) throw deleteError;
+    } catch (error) {
+      notifyOfflineVault(error.message || 'Cloud delete failed');
     }
   }
 

@@ -1,7 +1,7 @@
 // src/components/layout/UserProfileDrawer.jsx
 import React, { useState, useEffect } from 'react';
 import { 
-  X, Database, Cloud, ShieldCheck, HeartHandshake, Palette, 
+  X, Database, Cloud, ShieldCheck, HeartHandshake, Palette, QrCode,
   Key, Eye, EyeOff, Check, AlertCircle, RefreshCw, Download, 
   Upload, Trash2, Sun, CloudRain, Moon, Sunset, Sunrise, Sparkles, Sliders
 } from 'lucide-react';
@@ -12,6 +12,8 @@ import {
   testSupabaseConnection, 
   isVaultConfigured 
 } from '../../utils/supabaseClient';
+import { QRCodeSVG } from 'qrcode.react';
+import { createPairingPayload } from '../../utils/supabaseClient';
 
 export default function UserProfileDrawer({ 
   isOpen, 
@@ -35,6 +37,8 @@ export default function UserProfileDrawer({
   const [showKey, setShowKey] = useState(false);
   const [testStatus, setTestStatus] = useState(null); // { loading, ok, message }
   const [isCloudConfigured, setIsCloudConfigured] = useState(false);
+  const [isPairingQrVisible, setIsPairingQrVisible] = useState(false);
+  const pairingPayload = createPairingPayload({ campus: 'Headquarters' });
 
   useEffect(() => {
     const creds = getVaultCredentials();
@@ -290,6 +294,23 @@ export default function UserProfileDrawer({
                     Engine: <strong className="text-cyan-300">Indexed Local Vault</strong>
                   </div>
                 </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-cyan-500/[0.08] border border-cyan-400/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold flex items-center gap-1.5"><QrCode size={14} className="text-cyan-300" /> Pair Mobile Device</span>
+                  <span className="text-[9px] font-mono text-cyan-200/70">ZERO CONFIG</span>
+                </div>
+                <p className="text-[11px] opacity-75 leading-relaxed">Display a one-time QR code for the GraceOS mobile terminal. No manual API key entry is required.</p>
+                <button type="button" onClick={() => setIsPairingQrVisible(value => !value)} className="w-full rounded-xl bg-cyan-400/20 px-3 py-2 text-xs font-bold text-cyan-200 border border-cyan-300/30 hover:bg-cyan-400/30">
+                  {isPairingQrVisible ? 'Hide Pairing QR' : 'Show Pairing QR'}
+                </button>
+                {isPairingQrVisible && (
+                  <div className="flex flex-col items-center gap-2 rounded-2xl bg-white p-4">
+                    <QRCodeSVG value={pairingPayload} size={190} level="M" includeMargin />
+                    <span className="text-center text-[9px] text-slate-500">Scan this code from the mobile app camera</span>
+                  </div>
+                )}
               </div>
 
               {/* Snapshot Backup Actions */}

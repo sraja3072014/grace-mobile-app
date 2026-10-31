@@ -19,7 +19,9 @@ import NavSubPopups from './components/layout/NavSubPopups';
 import MemberProfileModal from './components/modals/MemberProfileModal';
 import QuickAttendanceModal from './components/modals/QuickAttendanceModal';
 import FinanceEntryModal from './components/modals/FinanceEntryModal';
+import TerminalPairingModal from './components/modals/TerminalPairingModal';
 import { upsertMember } from './services/memberService';
+import { isVaultConfigured } from './utils/supabaseClient';
 
 // Pages
 import OverviewTab from './pages/1_Overview/OverviewTab';
@@ -56,6 +58,7 @@ export default function App() {
   const [membersRefreshCount, setMembersRefreshCount] = useState(0);
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
   const [isFinanceModalOpen, setIsFinanceModalOpen] = useState(false);
+  const [isPairingModalOpen, setIsPairingModalOpen] = useState(() => !isVaultConfigured());
 
   // App Data States
   const [branches, setBranches] = useState(DEFAULT_CAMPUSES);
@@ -134,6 +137,12 @@ export default function App() {
 
   const handleGlobalRefresh = async () => {
     await new Promise((resolve) => setTimeout(resolve, 800));
+  };
+
+  const handlePaired = () => {
+    setIsPairingModalOpen(false);
+    setActiveTab('members');
+    setMembersRefreshCount(count => count + 1);
   };
 
   return (
@@ -280,6 +289,13 @@ export default function App() {
           onClose={() => setIsFinanceModalOpen(false)}
           initialType={financeType}
           onAddTransaction={(tx) => alert(`Recorded: ${tx.title} (${tx.amount})`)}
+          theme={currentTheme}
+        />
+
+        <TerminalPairingModal
+          isOpen={isPairingModalOpen}
+          onClose={() => setIsPairingModalOpen(false)}
+          onPaired={handlePaired}
           theme={currentTheme}
         />
 
