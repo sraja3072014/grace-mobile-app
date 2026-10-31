@@ -1,5 +1,6 @@
 import React from 'react';
-import { AVATAR_DROPDOWN_MENU } from '../../constants/navigationConfig';
+import { getNavigationConfig } from '../../constants/navigationConfig';
+import { useTranslation } from '../../hooks/useTranslation';
 
 export default function UserDropdownMenu({ 
   isOpen, 
@@ -9,6 +10,8 @@ export default function UserDropdownMenu({
   theme, 
   onSelectAction 
 }) {
+  const { language } = useTranslation();
+  const { avatarDropdownMenu } = getNavigationConfig(language);
   if (!isOpen) return null;
 
   return (
@@ -28,7 +31,7 @@ export default function UserDropdownMenu({
           </p>
         </div>
 
-        {AVATAR_DROPDOWN_MENU.map((item) => {
+        {avatarDropdownMenu.map((item) => {
           const Icon = item.icon;
           return (
             <button

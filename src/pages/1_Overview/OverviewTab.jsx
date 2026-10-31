@@ -5,6 +5,8 @@ import {
   MapPin, Heart, HandHelping, Church, 
   Database, Cloud, UserPlus, Sparkles, ArrowRight
 } from 'lucide-react';
+import { formatCurrency } from '../../i18n/translations';
+import { useTranslation } from '../../hooks/useTranslation';
 
 // 🌟 Outer Border, Transparent Center, Bottom Glow Acrylic Glass Card
 function MultiLayerGlassCard({ children, className = '', glowColor = 'rgba(6, 182, 212, 0.25)', onClick }) {
@@ -38,6 +40,7 @@ export default function OverviewTab({
   onOpenFinance,
   onOpenSettings
 }) {
+  const { t } = useTranslation();
   const textColor = theme?.textMain || '#ffffff';
   const mutedTextColor = theme?.textMuted || 'rgba(255, 255, 255, 0.7)';
   const accentColor = theme?.accent || '#06b6d4';
@@ -130,7 +133,7 @@ export default function OverviewTab({
         <MultiLayerGlassCard glowColor="rgba(16, 185, 129, 0.3)" onClick={onOpenAttendance} className="p-2.5 flex flex-col justify-between h-20 text-center items-center">
           <div className="flex items-center gap-1 opacity-80">
             <Users size={13} className="text-emerald-400" />
-            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>Attend</span>
+            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>{t('overview.attend')}</span>
           </div>
           <div className="text-base font-black leading-none" style={{ color: textColor }}>
             142
@@ -141,10 +144,10 @@ export default function OverviewTab({
         <MultiLayerGlassCard glowColor="rgba(245, 158, 11, 0.3)" onClick={onOpenFinance} className="p-2.5 flex flex-col justify-between h-20 text-center items-center">
           <div className="flex items-center gap-1 opacity-80">
             <DollarSign size={13} className="text-amber-400" />
-            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>Tithe</span>
+            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>{t('overview.tithe')}</span>
           </div>
           <div className="text-sm font-black leading-none font-mono" style={{ color: textColor }}>
-            $2,850
+            {formatCurrency(2850, 'INR')}
           </div>
         </MultiLayerGlassCard>
 
@@ -152,7 +155,7 @@ export default function OverviewTab({
         <MultiLayerGlassCard glowColor="rgba(139, 92, 246, 0.3)" className="p-2.5 flex flex-col justify-between h-20 text-center items-center">
           <div className="flex items-center gap-1 opacity-80">
             <MessageSquare size={13} className="text-purple-400" />
-            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>Prayers</span>
+            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>{t('common.prayers')}</span>
           </div>
           <div className="text-base font-black leading-none" style={{ color: textColor }}>
             12
@@ -168,8 +171,8 @@ export default function OverviewTab({
         <MultiLayerGlassCard glowColor="rgba(245, 158, 11, 0.25)" className="p-3.5 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-2 border-b border-white/10">
-              <h3 className="text-xs font-black" style={{ color: textColor }}>Sanctuary Events</h3>
-              <span className="text-[9px] text-amber-400 font-bold flex items-center">View →</span>
+              <h3 className="text-xs font-black" style={{ color: textColor }}>{t('overview.sanctuaryEvents')}</h3>
+              <span className="text-[9px] text-amber-400 font-bold flex items-center">{t('overview.view')} →</span>
             </div>
 
             <div className="space-y-2 mt-2.5">
@@ -178,7 +181,7 @@ export default function OverviewTab({
                   <Church size={18} className="text-amber-400" />
                 </div>
                 <div>
-                  <div className="text-[11px] font-bold leading-tight" style={{ color: textColor }}>Sunday Service</div>
+                  <div className="text-[11px] font-bold leading-tight" style={{ color: textColor }}>{t('overview.sundayService')}</div>
                   <div className="text-[9px] opacity-70 mt-0.5" style={{ color: mutedTextColor }}>08:30 AM & 10:30 AM</div>
                 </div>
               </div>
@@ -188,7 +191,7 @@ export default function OverviewTab({
                   <Calendar size={18} className="text-cyan-400" />
                 </div>
                 <div>
-                  <div className="text-[11px] font-bold leading-tight" style={{ color: textColor }}>Midweek Study</div>
+                  <div className="text-[11px] font-bold leading-tight" style={{ color: textColor }}>{t('overview.midweekStudy')}</div>
                   <div className="text-[9px] opacity-70 mt-0.5" style={{ color: mutedTextColor }}>Wed • 07:00 PM</div>
                 </div>
               </div>
@@ -200,8 +203,8 @@ export default function OverviewTab({
         <MultiLayerGlassCard glowColor="rgba(6, 182, 212, 0.25)" className="p-3.5 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-2 border-b border-white/10">
-              <h3 className="text-xs font-black" style={{ color: textColor }}>Notice Board</h3>
-              <span className="text-[9px] text-cyan-400 font-bold flex items-center">Live →</span>
+              <h3 className="text-xs font-black" style={{ color: textColor }}>{t('overview.noticeBoard')}</h3>
+              <span className="text-[9px] text-cyan-400 font-bold flex items-center">{t('common.live')} →</span>
             </div>
 
             <div className="space-y-2.5 mt-2.5 text-[10px]">

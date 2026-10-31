@@ -1,15 +1,23 @@
 // src/pages/2_People/MembersPage.jsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { 
   Search, Phone, UserPlus, Layers, QrCode, 
   MapPin, Users, Cloud, CloudOff, Plus, X, 
   Calendar, Mail, Droplets, Flame, Building2, Trash2, Pencil,
-  Crown, ShieldCheck
+  Crown, ShieldCheck, WifiOff, RefreshCw, Sparkles
 } from 'lucide-react';
 import GlassCard from '../../components/common/GlassCard';
 import MemberIdCardModal from '../../components/modals/MemberIdCardModal';
 import { useVaultStorage } from '../../hooks/useVaultStorage';
-import { deleteMemberById, upsertMember, batchUpsertMembers } from '../../services/memberService';
+import { useRealtimeSync } from '../../hooks/useRealtimeSync';
+import { 
+  deleteMemberById, 
+  upsertMember, 
+  batchUpsertMembers,
+  updateCachedMember,
+  removeCachedMember
+} from '../../services/memberService';
+import { useTranslation } from '../../hooks/useTranslation';
 
 // 🌟 Clergy & Pastoral Precedence Keywords
 export const PASTORAL_KEYWORDS = ['pastor', 'rev', 'reverend', 'r.v', 'r.e.v', 'bishop', 'dr', 'doctor of divinity', 'd.d'];
@@ -129,6 +137,7 @@ export default function MembersPage({
   onEditMember,
   refreshTrigger = 0
 }) {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
   const [expandedFamilyId, setExpandedFamilyId] = useState('FAM-101');
@@ -184,6 +193,98 @@ export default function MembersPage({
     isLoading
   } = useVaultStorage('members', BACKUP_MEMBERS_DATA);
 
+  // Local state initialized with vault data for immediate 0ms realtime updates
+  const [localRecords, setLocalRecords] = useState(rawFamilies);
+
+  useEffect(() => {
+    setLocalRecords(rawFamilies);
+  }, [rawFamilies]);
+
+  // Realtime Toast State
+  const [toastMessage, setToastMessage] = useState('');
+  const toastTimeoutRef = useRef(null);
+
+  const showToast = (msg) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToastMessage(msg);
+    toastTimeoutRef.current = setTimeout(() => setToastMessage(''), 3500);
+  };
+
+  const parseRealtimeRow = (row) => {
+    if (!row) return row;
+    let payload = {};
+    if (row.raw_payload) {
+      payload = typeof row.raw_payload === 'string'
+        ? JSON.parse(row.raw_payload)
+        : row.raw_payload;
+    }
+    const householdPayload = Boolean(
+      payload.headMember ||
+      Array.isArray(payload.members) ||
+      typeof payload.members === 'string'
+    );
+    return {
+      ...row,
+      id: row.id || row.family_id || payload.familyId,
+      familyId: row.family_id || row.id || payload.familyId,
+      familyName: row.family_name || payload.familyName,
+      campus: row.campus || payload.campus || 'Main Sanctuary',
+      ...payload,
+      ...(householdPayload ? {
+        headMember: {
+          ...(payload.headMember || {}),
+          name: payload.headMember?.name || row.head_name,
+          phone: payload.headMember?.phone || row.phone
+        }
+      } : {})
+    };
+  };
+
+  // 🌟 Realtime Channel Subscription Hook (Postgres Changes on public.members)
+  const {
+    isRealtimeConnected,
+    isOnline,
+    resync
+  } = useRealtimeSync({
+    table: 'members',
+    onInsert: (newRow) => {
+      const parsed = parseRealtimeRow(newRow);
+      setLocalRecords((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const exists = list.some(r => String(r.id) === String(newRow.id));
+        const next = exists
+          ? list.map(r => String(r.id) === String(newRow.id) ? parsed : r)
+          : [parsed, ...list];
+        updateCachedMember(parsed);
+        return next;
+      });
+      showToast(`⚡ Realtime: New member ${newRow.name || ''} added`);
+    },
+    onUpdate: (updatedRow) => {
+      const parsed = parseRealtimeRow(updatedRow);
+      setLocalRecords((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const next = list.map(r => String(r.id) === String(updatedRow.id) ? parsed : r);
+        updateCachedMember(parsed);
+        return next;
+      });
+      showToast(`⚡ Realtime: Member ${updatedRow.name || ''} updated`);
+    },
+    onDelete: (deletedRow) => {
+      const deletedId = String(deletedRow.id);
+      setLocalRecords((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const next = list.filter(r => String(r.id) !== deletedId && String(r.memberId) !== deletedId);
+        removeCachedMember(deletedId);
+        return next;
+      });
+      showToast('⚡ Realtime: Member record removed');
+    },
+    onSync: () => {
+      refreshData();
+    }
+  });
+
   useEffect(() => {
     if (refreshTrigger > 0) {
       refreshData();
@@ -192,7 +293,7 @@ export default function MembersPage({
 
   // 🌟 Normalizer (raw_payload-ஐ பிரித்து எடுத்தல்)
   const normalizedFamilies = React.useMemo(() => {
-    const list = Array.isArray(rawFamilies) ? rawFamilies : [];
+    const list = Array.isArray(localRecords) ? localRecords : (Array.isArray(rawFamilies) ? rawFamilies : []);
     const seenMap = new Map();
     const individualGroups = new Map();
 
@@ -353,9 +454,10 @@ export default function MembersPage({
     });
 
     return Array.from(seenMap.values());
-  }, [rawFamilies]);
+  }, [localRecords, rawFamilies]);
 
-  const isIndividualMemberData = (Array.isArray(rawFamilies) ? rawFamilies : []).some((row) => (
+  const activeRecords = Array.isArray(localRecords) ? localRecords : (Array.isArray(rawFamilies) ? rawFamilies : []);
+  const isIndividualMemberData = activeRecords.some((row) => (
     row.household_role && !row.headMember && !Array.isArray(row.members)
   ));
 
@@ -372,7 +474,7 @@ export default function MembersPage({
       ];
 
       return familyMembers.map((member) => {
-        const source = rawFamilies.find(row => String(row.id) === String(member.memberId)) || {};
+        const source = activeRecords.find(row => String(row.id) === String(member.memberId)) || {};
         const sourcePayload = typeof source.raw_payload === 'string'
           ? JSON.parse(source.raw_payload)
           : source.raw_payload || {};
@@ -431,12 +533,13 @@ export default function MembersPage({
     });
 
     const nextIds = new Set(nextRecords.map(record => String(record.id)));
-    const removedIds = rawFamilies
+    const removedIds = activeRecords
       .filter(row => row.family_id && !nextIds.has(String(row.id)))
       .map(row => row.id);
 
-    // 🌟 Atomic single-dispatch batch upsert and delete
+    // 🌟 Atomic single-dispatch batch upsert and delete with immediate local sync
     await batchUpsertMembers(nextRecords, removedIds);
+    setLocalRecords(nextRecords);
     await refreshData();
   };
 
@@ -444,7 +547,7 @@ export default function MembersPage({
   const handleSaveHead = async (e) => {
     e.preventDefault();
     if (!headForm.name.trim() || !headForm.phone.trim()) {
-      alert("தயவுசெய்து பெயர் மற்றும் தொலைபேசி எண்ணை உள்ளிடவும்!");
+      alert(t('dialogs.requiredMemberFields'));
       return;
     }
 
@@ -478,11 +581,11 @@ export default function MembersPage({
 
       try {
         await persistFamilies(updated);
-        alert(`வெற்றி! ${headForm.name.trim()} குடும்ப விவரங்கள் புதுப்பிக்கப்பட்டன.`);
+        alert(t('dialogs.saved', { name: headForm.name.trim() }));
         setIsHeadModalOpen(false);
         setEditingFamilyId(null);
       } catch (error) {
-        alert(`Supabase ஒத்திசைவு தோல்வியடைந்தது: ${error.message}. சாதனத்தில் உள்ள vault நகல் தக்கவைக்கப்பட்டது.`);
+        alert(t('dialogs.syncFailed', { error: error.message }));
       } finally {
         setIsSaving(false);
       }
@@ -512,11 +615,11 @@ export default function MembersPage({
     const updated = [newFamily, ...normalizedFamilies];
     try {
       await persistFamilies(updated);
-      alert(`வெற்றி! ${newFamily.headMember.name} குடும்பம் சேர்க்கப்பட்டது.`);
+      alert(t('dialogs.added', { name: newFamily.headMember.name }));
       setIsHeadModalOpen(false);
       setInitialMembers([]);
     } catch (error) {
-      alert(`Supabase ஒத்திசைவு தோல்வியடைந்தது: ${error.message}. சாதனத்தில் உள்ள vault நகல் தக்கவைக்கப்பட்டது.`);
+      alert(t('dialogs.syncFailed', { error: error.message }));
     } finally {
       setIsSaving(false);
     }
@@ -559,32 +662,30 @@ export default function MembersPage({
       setExpandedFamilyId(targetFamilyForSub.familyId);
       setIsSubMemberModalOpen(false);
       setEditingSubMemberId(null);
-      alert(editingSubMemberId
-        ? `${newSub.name} விவரங்கள் புதுப்பிக்கப்பட்டன.`
-        : `வெற்றி! ${newSub.name} ${targetFamilyForSub.familyName}-ல் சேர்க்கப்பட்டார்.`);
+      alert(t(editingSubMemberId ? 'dialogs.saved' : 'dialogs.added', { name: newSub.name }));
     } catch (error) {
-      alert(`Supabase ஒத்திசைவு தோல்வியடைந்தது: ${error.message}. சாதனத்தில் உள்ள vault நகல் தக்கவைக்கப்பட்டது.`);
+      alert(t('dialogs.syncFailed', { error: error.message }));
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDeleteHousehold = async (family) => {
-    if (!window.confirm(`${family.familyName} குடும்பத்தையும் அதன் உறுப்பினர்களையும் நீக்கவா?`)) return;
+    if (!window.confirm(t('dialogs.householdDelete', { name: family.familyName }))) return;
 
     setIsSaving(true);
     try {
       await removeFamily(family.familyId);
-      alert(`${family.familyName} குடும்பம் நீக்கப்பட்டது.`);
+      alert(t('dialogs.deleted', { name: family.familyName }));
     } catch (error) {
-      alert(`குடும்பத்தை நீக்க முடியவில்லை: ${error.message}`);
+      alert(t('dialogs.deleteFailed', { name: family.familyName, error: error.message }));
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDeleteSubMember = async (family, member) => {
-    if (!window.confirm(`${member.name} உறுப்பினரை நீக்கவா?`)) return;
+    if (!window.confirm(t('dialogs.memberDelete', { name: member.name }))) return;
 
     setIsSaving(true);
     try {
@@ -592,9 +693,9 @@ export default function MembersPage({
         ? { ...item, members: item.members.filter(person => person.memberId !== member.memberId) }
         : item);
       await persistFamilies(updated);
-      alert(`${member.name} நீக்கப்பட்டார்.`);
+      alert(t('dialogs.deleted', { name: member.name }));
     } catch (error) {
-      alert(`உறுப்பினரை நீக்க முடியவில்லை: ${error.message}`);
+      alert(t('dialogs.deleteFailed', { name: member.name, error: error.message }));
     } finally {
       setIsSaving(false);
     }
@@ -722,6 +823,14 @@ export default function MembersPage({
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
       
+      {/* Realtime Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-5 right-5 bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs px-4 py-2.5 rounded-2xl flex items-center gap-2 backdrop-blur-xl shadow-2xl z-50 animate-in fade-in slide-in-from-top-2">
+          <Sparkles size={16} className="text-cyan-400" />
+          <span className="font-bold">{toastMessage}</span>
+        </div>
+      )}
+
       {/* 1. Header Bar */}
       <div className="flex items-center justify-between px-1">
         <div>
@@ -729,15 +838,36 @@ export default function MembersPage({
             <h2 className="text-base font-extrabold tracking-tight">Believers & Families</h2>
             <button
               type="button" 
-              onClick={refreshData}
-              className={`flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 rounded-full border cursor-pointer ${
-                isCloudSynced 
-                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' 
-                  : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+              onClick={() => { refreshData(); resync(); }}
+              className={`flex items-center gap-1.5 text-[9px] font-mono px-2.5 py-1 rounded-full border cursor-pointer transition ${
+                !isOnline 
+                  ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' 
+                  : isRealtimeConnected 
+                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+                    : isCloudSynced 
+                      ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' 
+                      : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
               }`}
             >
-              {isCloudSynced ? <Cloud size={10} /> : <CloudOff size={10} />}
-              <span>{isLoading ? 'Syncing...' : isCloudSynced ? 'Supabase Live' : 'Vault Synced'}</span>
+              {!isOnline ? (
+                <>
+                  <WifiOff size={11} />
+                  <span>Offline Vault</span>
+                </>
+              ) : isRealtimeConnected ? (
+                <>
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span>Live WebSocket</span>
+                </>
+              ) : (
+                <>
+                  {isCloudSynced ? <Cloud size={10} /> : <CloudOff size={10} />}
+                  <span>{isLoading ? 'Syncing...' : isCloudSynced ? 'Supabase Live' : 'Vault Synced'}</span>
+                </>
+              )}
             </button>
           </div>
           <span className="text-[11px] opacity-60 font-semibold">
@@ -779,6 +909,36 @@ export default function MembersPage({
           <span>+ Register Family</span>
         </button>
       </div>
+
+      {/* Offline Directory Banner */}
+      {!isOnline && (
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 backdrop-blur-xl flex items-center justify-between shadow-lg animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0">
+              <WifiOff size={18} />
+            </div>
+            <div>
+              <div className="text-xs font-extrabold flex items-center gap-1.5 text-white">
+                <span>Offline Vault Active</span>
+                <span className="text-[9px] px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 font-mono font-bold border border-amber-500/30">
+                  CACHED DIRECTORY
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-200/80 mt-0.5">
+                Serving {normalizedFamilies.length} cached families offline. Live sync will resume automatically when reconnected.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => resync()}
+            className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-bold shrink-0 flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+          >
+            <RefreshCw size={12} className={isLoading ? "animate-spin" : ""} />
+            <span>{isLoading ? 'Checking...' : 'Retry'}</span>
+          </button>
+        </div>
+      )}
 
       {/* 2. Search Field */}
       <div 

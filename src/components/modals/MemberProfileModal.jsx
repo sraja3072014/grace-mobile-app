@@ -4,6 +4,7 @@ import {
   X, Save, User, Phone, Mail, MapPin, Calendar, 
   Heart, Droplets, Sparkles, Check, Users, Crown, ShieldCheck
 } from 'lucide-react';
+import { useTranslation } from '../../hooks/useTranslation';
 
 const TALENT_PRESETS = [
   'Worship Team & Vocals',
@@ -43,6 +44,7 @@ export default function MemberProfileModal({
   theme = {}, 
   initialData = null 
 }) {
+  const { t } = useTranslation();
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
     id: '',
@@ -277,7 +279,7 @@ export default function MemberProfileModal({
             <div>
               <div className="flex items-center gap-1.5">
                 <h2 className="text-sm font-black tracking-tight leading-tight">
-                  {formData.household_role === 'Head of Family' ? 'Family Head Registration' : `${formData.household_role} Profile`}
+                  {formData.household_role === 'Head of Family' ? `${t('common.household')} ${t('common.member')}` : `${formData.household_role} ${t('common.member')}`}
                 </h2>
                 {clergyRecord && (
                   <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.3)]">
@@ -305,16 +307,16 @@ export default function MemberProfileModal({
           <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2.5">
             <span className="text-[10px] font-mono tracking-wider opacity-60 uppercase block flex items-center gap-1.5">
               <User size={12} className="text-amber-400" />
-              1. Demographics & Relationship Structure
+              1. {t('common.demographics')}
             </span>
 
             {/* Name */}
             <div>
-              <label className="text-[10px] font-bold block mb-1 opacity-80">Full Name *</label>
+              <label className="text-[10px] font-bold block mb-1 opacity-80">{t('common.fullName')} {t('common.required')}</label>
               <input 
                 type="text" 
                 required
-                placeholder="Enter full name (e.g. Pastor Johnraja / Suresh)"
+                placeholder={`${t('common.fullName')} (e.g. Pastor Johnraja / Suresh)`}
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="w-full px-2.5 py-2 rounded-xl border border-white/15 bg-white/5 font-bold text-xs focus:outline-none focus:border-cyan-400 text-white placeholder-slate-500"
@@ -325,7 +327,7 @@ export default function MemberProfileModal({
             <div>
               <label className="text-[10px] font-bold block mb-1 opacity-80 flex items-center gap-1">
                 <Users size={11} className="text-cyan-400" />
-                Relationship Category (Household Role) *
+                {t('common.relationship')} {t('common.required')}
               </label>
               <select 
                 value={formData.household_role}
@@ -341,7 +343,7 @@ export default function MemberProfileModal({
             {/* Mandatory Gender Selection Buttons */}
             <div>
               <label className="text-[10px] font-bold block mb-1 opacity-80">
-                Gender (Mandatory) *
+                {t('common.gender')} {t('common.required')}
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -353,7 +355,7 @@ export default function MemberProfileModal({
                       : 'border-white/10 bg-white/5 opacity-70 hover:opacity-100'
                   }`}
                 >
-                  <span>👨 Male</span>
+                  <span>👨 {t('common.male')}</span>
                   {formData.gender === 'Male' && <Check size={12} strokeWidth={3} />}
                 </button>
 
@@ -366,7 +368,7 @@ export default function MemberProfileModal({
                       : 'border-white/10 bg-white/5 opacity-70 hover:opacity-100'
                   }`}
                 >
-                  <span>👩 Female</span>
+                  <span>👩 {t('common.female')}</span>
                   {formData.gender === 'Female' && <Check size={12} strokeWidth={3} />}
                 </button>
               </div>
@@ -375,7 +377,7 @@ export default function MemberProfileModal({
             {/* Date of Birth, Age, Blood Group */}
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="text-[10px] font-bold block mb-1 opacity-80">Date of Birth</label>
+                <label className="text-[10px] font-bold block mb-1 opacity-80">{t('common.dateOfBirth')}</label>
                 <input 
                   type="date" 
                   value={formData.date_of_birth}
@@ -385,7 +387,7 @@ export default function MemberProfileModal({
               </div>
 
               <div>
-                <label className="text-[10px] font-bold block mb-1 opacity-80">Age</label>
+                <label className="text-[10px] font-bold block mb-1 opacity-80">{t('common.age')}</label>
                 <input 
                   type="number" 
                   value={formData.age}
@@ -395,7 +397,7 @@ export default function MemberProfileModal({
               </div>
 
               <div>
-                <label className="text-[10px] font-bold block mb-1 opacity-80">Blood Group</label>
+                <label className="text-[10px] font-bold block mb-1 opacity-80">{t('common.bloodGroup')}</label>
                 <select 
                   value={formData.blood_group}
                   onChange={(e) => setFormData({ ...formData, blood_group: e.target.value })}
@@ -413,16 +415,16 @@ export default function MemberProfileModal({
           <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2.5">
             <span className="text-[10px] font-mono tracking-wider opacity-60 uppercase block flex items-center gap-1.5">
               <Phone size={12} className="text-cyan-400" />
-              2. Contact & Location
+              2. {t('common.contactLocation')}
             </span>
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] font-bold block mb-1 opacity-80">Phone Number *</label>
+                <label className="text-[10px] font-bold block mb-1 opacity-80">{t('common.phone')} {t('common.required')}</label>
                 <input 
                   type="tel" 
                   required
-                  placeholder="10-digit mobile"
+                  placeholder={t('common.phone')}
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   className="w-full px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs font-mono focus:outline-none focus:border-cyan-400 text-white"
@@ -430,7 +432,7 @@ export default function MemberProfileModal({
               </div>
 
               <div>
-                <label className="text-[10px] font-bold block mb-1 opacity-80">Email</label>
+                <label className="text-[10px] font-bold block mb-1 opacity-80">{t('common.email')}</label>
                 <input 
                   type="email" 
                   placeholder="member@gmail.com"
@@ -443,7 +445,7 @@ export default function MemberProfileModal({
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] font-bold block mb-1 opacity-80">Campus</label>
+                <label className="text-[10px] font-bold block mb-1 opacity-80">{t('common.campus')}</label>
                 <select 
                   value={formData.campus}
                   onChange={(e) => setFormData({ ...formData, campus: e.target.value })}
@@ -456,7 +458,7 @@ export default function MemberProfileModal({
               </div>
 
               <div>
-                <label className="text-[10px] font-bold block mb-1 opacity-80">Area / Suburb</label>
+                <label className="text-[10px] font-bold block mb-1 opacity-80">{t('common.area')}</label>
                 <input 
                   type="text" 
                   value={formData.area}
@@ -467,10 +469,10 @@ export default function MemberProfileModal({
             </div>
 
             <div>
-              <label className="text-[10px] font-bold block mb-1 opacity-80">Residential Address</label>
+              <label className="text-[10px] font-bold block mb-1 opacity-80">{t('common.address')}</label>
               <input 
                 type="text" 
-                placeholder="Door No, Street Name, City"
+                placeholder={t('common.address')}
                 value={formData.address}
                 onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                 className="w-full px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs focus:outline-none text-white"
@@ -482,7 +484,7 @@ export default function MemberProfileModal({
           <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2.5">
             <span className="text-[10px] font-mono tracking-wider opacity-60 uppercase block flex items-center gap-1.5">
               <Droplets size={12} className="text-sky-400" />
-              3. Spiritual Milestones & Sacraments
+              3. {t('common.spiritualMilestones')}
             </span>
 
             {/* Water Baptism */}
@@ -490,7 +492,7 @@ export default function MemberProfileModal({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold flex items-center gap-1.5">
                   <Droplets size={13} className="text-sky-400" />
-                  Water Baptism (ஞானஸ்நானம்)
+                  {t('common.waterBaptism')}
                 </span>
                 <input 
                   type="checkbox"
@@ -501,7 +503,7 @@ export default function MemberProfileModal({
               </div>
               {formData.is_baptized && (
                 <div>
-                  <label className="text-[9px] font-bold block mb-1 opacity-80">Date of Baptism</label>
+                  <label className="text-[9px] font-bold block mb-1 opacity-80">{t('common.dateOfBaptism')}</label>
                   <input 
                     type="date"
                     value={formData.baptism_date}
@@ -517,7 +519,7 @@ export default function MemberProfileModal({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold flex items-center gap-1.5">
                   <Sparkles size={13} className="text-amber-400" />
-                  Holy Spirit Anointing (அபிஷேகம்)
+                  {t('common.holySpiritAnointing')}
                 </span>
                 <input 
                   type="checkbox"
@@ -532,7 +534,7 @@ export default function MemberProfileModal({
             <div>
               <label className="text-[10px] font-bold block mb-1 opacity-80 flex items-center gap-1">
                 <Heart size={11} className="text-rose-400" />
-                Wedding Anniversary Date
+                {t('common.weddingAnniversary')}
               </label>
               <input 
                 type="date"
@@ -547,7 +549,7 @@ export default function MemberProfileModal({
           <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2">
             <span className="text-[10px] font-mono tracking-wider opacity-60 uppercase block flex items-center gap-1.5">
               <Sparkles size={12} className="text-amber-400" />
-              4. Ministry & Service Talents
+              4. {t('common.ministryTalents')}
             </span>
 
             <div className="flex flex-wrap gap-1.5 pt-1">
@@ -579,7 +581,7 @@ export default function MemberProfileModal({
             style={{ background: clergyRecord ? '#f59e0b' : (theme?.accent || '#06b6d4') }}
           >
             <Save size={14} />
-            <span>{isSaving ? 'Saving to Vault...' : 'Save Believer Profile to Vault'}</span>
+            <span>{isSaving ? t('common.saving') : t('common.saveProfile')}</span>
           </button>
         </form>
       </div>

@@ -1,9 +1,10 @@
 // src/components/layout/DynamicIslandDock.jsx
 import React from 'react';
 import { 
-  Home, Users, Church, Radio, 
-  Plus, CheckSquare, DollarSign, UserPlus, Sparkles
+  Plus, CheckSquare, DollarSign, UserPlus
 } from 'lucide-react';
+import { getNavigationConfig } from '../../constants/navigationConfig';
+import { useTranslation } from '../../hooks/useTranslation';
 
 export default function DynamicIslandDock({
   activeTab,
@@ -15,12 +16,8 @@ export default function DynamicIslandDock({
   onTriggerAction,
   theme
 }) {
-  const mainNavTabs = [
-    { id: 'home', label: 'Home', icon: Home },
-    { id: 'people', label: 'People', icon: Users, isPopup: true },
-    { id: 'church', label: 'Church', icon: Church, isPopup: true },
-    { id: 'connect', label: 'Connect', icon: Radio, isPopup: true }
-  ];
+  const { language, t } = useTranslation();
+  const mainNavTabs = getNavigationConfig(language).bottomNavTabs.map((tab) => ({ ...tab, isPopup: tab.hasSubMenu }));
 
   return (
     <div className="fixed bottom-5 inset-x-0 z-40 flex flex-col items-center justify-center px-4 pointer-events-none">
@@ -46,7 +43,7 @@ export default function DynamicIslandDock({
             className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/15 text-xs font-bold text-white cursor-pointer active:scale-95 transition"
           >
             <CheckSquare size={13} className="text-emerald-300" />
-            <span>Check-in</span>
+            <span>{t('nav.checkIn')}</span>
           </button>
 
           <button
@@ -58,7 +55,7 @@ export default function DynamicIslandDock({
             className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/15 text-xs font-bold text-white cursor-pointer active:scale-95 transition"
           >
             <DollarSign size={13} className="text-cyan-300" />
-            <span>Tithe</span>
+            <span>{t('common.tithe')}</span>
           </button>
 
           <button
@@ -70,7 +67,7 @@ export default function DynamicIslandDock({
             className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/15 text-xs font-bold text-white cursor-pointer active:scale-95 transition"
           >
             <UserPlus size={13} className="text-amber-300" />
-            <span>Member</span>
+            <span>{t('common.member')}</span>
           </button>
         </div>
       )}

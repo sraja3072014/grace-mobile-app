@@ -1,9 +1,6 @@
 import React from 'react';
-import { 
-  PEOPLE_SUB_MENU, 
-  CHURCH_SUB_MENU, 
-  CONNECT_SUB_MENU 
-} from '../../constants/navigationConfig';
+import { getNavigationConfig } from '../../constants/navigationConfig';
+import { useTranslation } from '../../hooks/useTranslation';
 
 export default function NavSubPopups({ 
   activeSubMenu, 
@@ -11,20 +8,22 @@ export default function NavSubPopups({
   onSelectSubItem, 
   theme 
 }) {
+  const { language, t } = useTranslation();
+  const navigation = getNavigationConfig(language);
   if (!activeSubMenu) return null;
 
   let menuItems = [];
   let title = '';
 
   if (activeSubMenu === 'people') {
-    menuItems = PEOPLE_SUB_MENU;
-    title = 'People & Shepherding';
+    menuItems = navigation.peopleSubMenu;
+    title = t('nav.peopleTitle');
   } else if (activeSubMenu === 'church') {
-    menuItems = CHURCH_SUB_MENU;
-    title = 'Church Operations';
+    menuItems = navigation.churchSubMenu;
+    title = t('nav.churchTitle');
   } else if (activeSubMenu === 'connect') {
-    menuItems = CONNECT_SUB_MENU;
-    title = 'Connect & Fellowship';
+    menuItems = navigation.connectSubMenu;
+    title = t('nav.connectTitle');
   }
 
   return (
@@ -43,7 +42,7 @@ export default function NavSubPopups({
             {title}
           </span>
           <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/20 font-bold">
-            Sub Menu
+            {t('nav.subMenu')}
           </span>
         </div>
 
