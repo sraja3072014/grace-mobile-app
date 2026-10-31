@@ -5,6 +5,8 @@ import {
   MapPin, Clock, ArrowRight, UserCheck, Sparkles, Search, CheckCircle2 
 } from 'lucide-react';
 import GlassCard from '../../components/common/GlassCard';
+import { upsertMember } from '../../services/memberService';
+import { sanitizeMemberPayload } from '../../utils/schemaSanitizer';
 
 export default function VisitorsPage({ theme }) {
   const [activeSubTab, setActiveSubTab] = useState('pipeline'); // 'pipeline' | 'register'
@@ -69,7 +71,8 @@ export default function VisitorsPage({ theme }) {
     { id: 'FIRST_VISIT', label: '1. New Seeker', badge: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
     { id: 'CONTACTED', label: '2. Pastoral Call', badge: 'bg-sky-500/20 text-sky-400 border-sky-500/30' },
     { id: 'PRAYER_MEET', label: '3. Cottage Meet', badge: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' },
-    { id: 'COMMITTED', label: '4. Member Ready', badge: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' }
+    { id: 'COMMITTED', label: '4. Member Ready', badge: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+    { id: 'CONVERTED', label: '5. Converted', badge: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' }
   ];
 
   const showToast = (msg) => {
@@ -104,13 +107,45 @@ export default function VisitorsPage({ theme }) {
   };
 
   // 3. விசிட்டரை நிரந்தர உறுப்பினராக மாற்றுதல் (Convert to Member)
-  const handleConvertToMember = (visitor) => {
+  const handleConvertToMember = async (visitor) => {
     const confirmConvert = window.confirm(`${visitor.name}-ஐ சபையின் நிரந்தர உறுப்பினராக (Full Member) சேர்க்க விரும்புகிறீர்களா?`);
     if (!confirmConvert) return;
 
-    const updated = visitors.filter(v => v.id !== visitor.id);
-    setVisitors(updated);
-    showToast(`வெற்றி! ${visitor.name} சபையின் புதிய உறுப்பினராக சேர்க்கப்பட்டார்.`);
+    try {
+      const generatedMemberId = `GCC-MBR-${Date.now().toString().slice(-4)}`;
+      const generatedFamilyId = `FAM-${Date.now().toString().slice(-4)}`;
+      const memberRecord = sanitizeMemberPayload({
+        id: generatedMemberId,
+        family_id: generatedFamilyId,
+        name: visitor.name,
+        phone: visitor.phone,
+        area: visitor.area || 'Koduvai',
+        household_role: 'Head of Family',
+        status: 'Active',
+        campus: 'Main Sanctuary',
+        ministry_talents: ['Prayer Team']
+      });
+
+      await upsertMember(memberRecord);
+
+      try {
+        const cached = localStorage.getItem('graceos_vault_members');
+        const members = cached ? JSON.parse(cached) : [];
+        members.unshift(memberRecord);
+        localStorage.setItem('graceos_vault_members', JSON.stringify(members));
+      } catch (e) {
+        console.warn('Failed to update local member cache:', e);
+      }
+
+      const updated = visitors.map(v => 
+        v.id === visitor.id ? { ...v, stage: 'CONVERTED' } : v
+      );
+      setVisitors(updated);
+      showToast(`வெற்றி! ${visitor.name} சபையின் உறுப்பினராக சேர்க்கப்பட்டார் (${generatedMemberId}).`);
+    } catch (err) {
+      console.error('Failed to convert visitor to member:', err);
+      showToast('Error converting visitor to member. Please try again.');
+    }
   };
 
   // 4. புதிய விருந்தினரைச் சேமித்தல்
@@ -378,7 +413,7 @@ export default function VisitorsPage({ theme }) {
                       </a>
                     </div>
 
-                    {/* Stage 4: Make Member or Advance Stage */}
+                    {/* Stage 4: Make Member or Advance Stage or Already Converted */}
                     {v.stage === 'COMMITTED' ? (
                       <button
                         type="button"
@@ -388,6 +423,11 @@ export default function VisitorsPage({ theme }) {
                         <UserCheck size={13} />
                         <span>Make Member</span>
                       </button>
+                    ) : v.stage === 'CONVERTED' ? (
+                      <span className="px-2.5 py-1 rounded-xl bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 text-[10px] font-bold flex items-center gap-1">
+                        <CheckCircle2 size={11} />
+                        <span>Converted</span>
+                      </span>
                     ) : (
                       <button
                         type="button"

@@ -10,12 +10,25 @@ export default function ParticleCanvas({ particleType = 'sunbeams' }) {
     const ctx = canvas.getContext('2d');
     let animationFrameId;
 
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    let dpr = window.devicePixelRatio || 1;
+
+    const resizeCanvas = () => {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.scale(dpr, dpr);
+    };
+
+    resizeCanvas();
 
     const handleResize = () => {
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
+      resizeCanvas();
     };
     window.addEventListener('resize', handleResize);
 
@@ -35,6 +48,8 @@ export default function ParticleCanvas({ particleType = 'sunbeams' }) {
     let celestialAngle = 0;
 
     const render = () => {
+      if (document.hidden) return;
+
       ctx.clearRect(0, 0, width, height);
 
       // 🌧️ 1. RAIN MOOD: காற்றில் சாய்ந்து ஆடும் மழைத்துளிகள் (Wind-swept Rain)
@@ -153,10 +168,21 @@ export default function ParticleCanvas({ particleType = 'sunbeams' }) {
       animationFrameId = requestAnimationFrame(render);
     };
 
-    render();
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = undefined;
+      } else {
+        render();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    if (!document.hidden) render();
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       cancelAnimationFrame(animationFrameId);
     };
   }, [particleType]);

@@ -1,5 +1,6 @@
 // src/services/memberService.js
 import { getSupabase } from '../utils/supabaseClient';
+import { sanitizeMemberPayload } from '../utils/schemaSanitizer';
 
 function requireSupabase() {
   const client = getSupabase();
@@ -26,16 +27,55 @@ export async function fetchAllMembers() {
 
 export async function upsertMember(memberData) {
   const client = requireSupabase();
+  const sanitized = sanitizeMemberPayload(memberData);
+
   const { error } = await client
     .from('members')
     .upsert({
-      ...memberData,
+      ...sanitized,
       updated_at: new Date().toISOString()
     }, { onConflict: 'id' });
 
   if (error) {
     console.error('Error saving member to cloud:', error);
     throw error;
+  }
+
+  return true;
+}
+
+/**
+ * 🌟 Atomic Batch Upsert & Delete:
+ * Eliminates serial N+1 HTTP request waterfalls.
+ * Dispatches all member records in a single network request.
+ */
+export async function batchUpsertMembers(records = [], removedIds = []) {
+  const client = requireSupabase();
+
+  // 1. Single Atomic Batch Upsert
+  if (Array.isArray(records) && records.length > 0) {
+    const sanitizedBatch = records.map(record => sanitizeMemberPayload(record));
+    const { error: upsertError } = await client
+      .from('members')
+      .upsert(sanitizedBatch, { onConflict: 'id' });
+
+    if (upsertError) {
+      console.error('Error in batch member upsert:', upsertError);
+      throw upsertError;
+    }
+  }
+
+  // 2. Single Atomic Batch Delete
+  if (Array.isArray(removedIds) && removedIds.length > 0) {
+    const { error: deleteError } = await client
+      .from('members')
+      .delete()
+      .in('id', removedIds);
+
+    if (deleteError) {
+      console.error('Error in batch member deletion:', deleteError);
+      throw deleteError;
+    }
   }
 
   return true;

@@ -9,7 +9,7 @@ import {
 import GlassCard from '../../components/common/GlassCard';
 import MemberIdCardModal from '../../components/modals/MemberIdCardModal';
 import { useVaultStorage } from '../../hooks/useVaultStorage';
-import { deleteMemberById, upsertMember } from '../../services/memberService';
+import { deleteMemberById, upsertMember, batchUpsertMembers } from '../../services/memberService';
 
 // 🌟 Clergy & Pastoral Precedence Keywords
 export const PASTORAL_KEYWORDS = ['pastor', 'rev', 'reverend', 'r.v', 'r.e.v', 'bishop', 'dr', 'doctor of divinity', 'd.d'];
@@ -435,12 +435,8 @@ export default function MembersPage({
       .filter(row => row.family_id && !nextIds.has(String(row.id)))
       .map(row => row.id);
 
-    for (const record of nextRecords) {
-      await upsertMember(record);
-    }
-    for (const memberId of removedIds) {
-      await deleteMemberById(memberId);
-    }
+    // 🌟 Atomic single-dispatch batch upsert and delete
+    await batchUpsertMembers(nextRecords, removedIds);
     await refreshData();
   };
 
