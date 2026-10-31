@@ -1,4 +1,4 @@
-package com.example.app;
+package org.graceos.mobile;
 
 import com.getcapacitor.BridgeActivity;
 
