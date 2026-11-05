@@ -1,5 +1,5 @@
 // src/components/modals/QuickAttendanceModal.jsx
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { CalendarCheck, Search, UserPlus } from 'lucide-react';
 import CenterModal from '../common/CenterModal';
 
@@ -92,7 +92,7 @@ export default function QuickAttendanceModal({
         </div>
 
         {/* 🌟 Direct Registration Route Bar */}
-        <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+        {onRegisterMember && <div className="pt-2 border-t border-white/10 flex items-center justify-between">
           <span className="text-[10px] text-slate-400">Believer not found?</span>
           <button
             type="button"
@@ -102,7 +102,7 @@ export default function QuickAttendanceModal({
             <UserPlus size={13} />
             <span>Register Member</span>
           </button>
-        </div>
+        </div>}
 
       </div>
     </CenterModal>

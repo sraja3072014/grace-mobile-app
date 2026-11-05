@@ -1,5 +1,5 @@
 // src/pages/2_People/MembersPage.jsx
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
   Search, Phone, UserPlus, Layers, QrCode, 
   MapPin, Users, Cloud, CloudOff, Plus, X, 
@@ -11,13 +11,13 @@ import MemberIdCardModal from '../../components/modals/MemberIdCardModal';
 import { useVaultStorage } from '../../hooks/useVaultStorage';
 import { useRealtimeSync } from '../../hooks/useRealtimeSync';
 import { 
-  deleteMemberById, 
-  upsertMember, 
   batchUpsertMembers,
   updateCachedMember,
-  removeCachedMember
+  removeCachedMember,
+  bidirectionalSyncMembers
 } from '../../services/memberService';
 import { useTranslation } from '../../hooks/useTranslation';
+import { hasPermission, ROLES } from '../../utils/accessControl';
 
 // 🌟 Clergy & Pastoral Precedence Keywords
 export const PASTORAL_KEYWORDS = ['pastor', 'rev', 'reverend', 'r.v', 'r.e.v', 'bishop', 'dr', 'doctor of divinity', 'd.d'];
@@ -135,9 +135,11 @@ export default function MembersPage({
   theme,
   onAddNewMember,
   onEditMember,
-  refreshTrigger = 0
+  refreshTrigger = 0,
+  role = ROLES.MEMBER
 }) {
   const { t } = useTranslation();
+  const canManageMembers = hasPermission(role, 'MANAGE_MEMBERS');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
   const [expandedFamilyId, setExpandedFamilyId] = useState('FAM-101');
@@ -151,6 +153,7 @@ export default function MembersPage({
   const [editingFamilyId, setEditingFamilyId] = useState(null);
   const [editingSubMemberId, setEditingSubMemberId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false); // Two-way sync in progress
 
   // குடும்பத் தலைவர் படிவம்
   const [headForm, setHeadForm] = useState({
@@ -208,6 +211,28 @@ export default function MembersPage({
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setToastMessage(msg);
     toastTimeoutRef.current = setTimeout(() => setToastMessage(''), 3500);
+  };
+
+  // Two-Way Bidirectional Sync Handler
+  const handleBidirSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      showToast('Bidirectional sync started...');
+      const { merged, pushed, pulled } = await bidirectionalSyncMembers({
+        onProgress: ({ phase, message }) => {
+          console.info('[MembersPage] Sync progress:', phase, message);
+        },
+      });
+      setLocalRecords(merged);
+      await refreshData();
+      showToast('Sync complete: ' + pushed + ' pushed, ' + pulled + ' pulled');
+    } catch (err) {
+      console.error('[MembersPage] Bidirectional sync failed:', err);
+      showToast('Sync failed: ' + err.message);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const parseRealtimeRow = (row) => {
@@ -671,6 +696,7 @@ export default function MembersPage({
   };
 
   const handleDeleteHousehold = async (family) => {
+    if (!canManageMembers) return;
     if (!window.confirm(t('dialogs.householdDelete', { name: family.familyName }))) return;
 
     setIsSaving(true);
@@ -685,6 +711,7 @@ export default function MembersPage({
   };
 
   const handleDeleteSubMember = async (family, member) => {
+    if (!canManageMembers) return;
     if (!window.confirm(t('dialogs.memberDelete', { name: member.name }))) return;
 
     setIsSaving(true);
@@ -875,7 +902,25 @@ export default function MembersPage({
           </span>
         </div>
 
-        <button
+        {/* 🔄 Sync + Register Buttons */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Bidirectional Sync Button */}
+          <button
+            type="button"
+            onClick={handleBidirSync}
+            disabled={isSyncing || !isOnline}
+            title="Two-way sync with Supabase"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-bold border transition active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              isSyncing
+                ? 'bg-violet-500/20 text-violet-300 border-violet-500/40'
+                : 'bg-white/8 border-white/10 hover:bg-white/15'
+            }`}
+          >
+            <RefreshCw size={13} className={isSyncing ? "animate-spin" : ""} />
+            <span>{isSyncing ? "Syncing…" : "Synchronize"}</span>
+          </button>
+
+          {canManageMembers && <button
           type="button"
           onClick={() => {
             if (onAddNewMember) {
@@ -907,7 +952,8 @@ export default function MembersPage({
         >
           <UserPlus size={14} />
           <span>+ Register Family</span>
-        </button>
+          </button>}
+        </div>
       </div>
 
       {/* Offline Directory Banner */}
@@ -1034,7 +1080,7 @@ export default function MembersPage({
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <button
+                  {canManageMembers && <button
                     type="button"
                     onClick={() => onEditMember
                       ? onEditMember(getMemberProfileData(fam, fam.headMember))
@@ -1045,7 +1091,7 @@ export default function MembersPage({
                     title="Edit Family Head"
                   >
                     <Pencil size={14} />
-                  </button>
+                  </button>}
 
                   <button
                     type="button"
@@ -1060,7 +1106,7 @@ export default function MembersPage({
                     <QrCode size={15} />
                   </button>
 
-                  <button
+                  {canManageMembers && <button
                     type="button"
                     onClick={() => handleDeleteHousehold(fam)}
                     disabled={isSaving}
@@ -1069,7 +1115,7 @@ export default function MembersPage({
                     title="Delete Household"
                   >
                     <Trash2 size={14} />
-                  </button>
+                  </button>}
 
                   <button
                     type="button"
@@ -1129,7 +1175,7 @@ export default function MembersPage({
                       <Users size={12} /> Household Members ({fam.members.length})
                     </span>
 
-                    <button
+                    {canManageMembers && <button
                       type="button"
                       onClick={() => {
                         if (onAddNewMember) {
@@ -1160,7 +1206,7 @@ export default function MembersPage({
                     >
                       <Plus size={11} />
                       <span>Add Sub-Member</span>
-                    </button>
+                    </button>}
                   </div>
 
                   {fam.members.length === 0 ? (
@@ -1209,7 +1255,7 @@ export default function MembersPage({
                             <QrCode size={12} />
                             <span className="text-[9px] font-bold">ID</span>
                           </button>
-                          <button
+                          {canManageMembers && <button
                             type="button"
                             onClick={() => onEditMember
                               ? onEditMember(getMemberProfileData(fam, m))
@@ -1220,8 +1266,8 @@ export default function MembersPage({
                             title="Edit Member"
                           >
                             <Pencil size={12} />
-                          </button>
-                          <button
+                          </button>}
+                          {canManageMembers && <button
                             type="button"
                             onClick={() => handleDeleteSubMember(fam, m)}
                             disabled={isSaving}
@@ -1230,7 +1276,7 @@ export default function MembersPage({
                             title="Delete Member"
                           >
                             <Trash2 size={12} />
-                          </button>
+                          </button>}
                         </div>
                       ))}
                     </div>

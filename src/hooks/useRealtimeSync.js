@@ -1,21 +1,10 @@
-// src/hooks/useRealtimeSync.js
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { getSupabase, isVaultConfigured } from '../utils/supabaseClient';
+import { isVaultConfigured } from '../utils/supabaseClient';
+import { subscribeRealtimeChanges } from '../services/syncEngine';
 
 /**
- * Custom hook to subscribe to Supabase Realtime Postgres Changes
- * on specified table (default 'members') with automatic offline detection,
- * reconnection handling, and anti-desynchronization guard.
- *
- * @param {Object} options
- * @param {string} [options.table='members'] - Supabase table name
- * @param {string} [options.schema='public'] - Database schema
- * @param {boolean} [options.enabled=true] - Whether subscription is active
- * @param {Function} [options.onInsert] - Callback when a row is inserted
- * @param {Function} [options.onUpdate] - Callback when a row is updated
- * @param {Function} [options.onDelete] - Callback when a row is deleted
- * @param {Function} [options.onPayload] - Callback for all postgres changes
- * @param {Function} [options.onSync] - Callback invoked when connection is restored to reconcile data
+ * Subscribes to the shared Supabase Realtime channel and dispatches events
+ * for the requested tables. The channel multiplexes members and visitors.
  */
 export function useRealtimeSync(options = {}) {
   const {
@@ -28,148 +17,97 @@ export function useRealtimeSync(options = {}) {
     onPayload,
     onSync
   } = options;
+  const tableKey = (Array.isArray(options.tables) ? options.tables : [table]).join(',');
 
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
-  const [channelStatus, setChannelStatus] = useState('DISCONNECTED'); // 'DISCONNECTED' | 'SUBSCRIBING' | 'SUBSCRIBED' | 'ERROR'
+  const [channelStatus, setChannelStatus] = useState('DISCONNECTED');
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [lastEvent, setLastEvent] = useState(null);
   const [error, setError] = useState(null);
+  const callbacksRef = useRef({});
+  const subscriptionRef = useRef(null);
+  const connectedRef = useRef(false);
+  const tablesRef = useRef(new Set(tableKey.split(',')));
 
-  // Store callbacks in refs to avoid re-subscribing on every parent render
-  const callbacksRef = useRef({ onInsert, onUpdate, onDelete, onPayload, onSync });
   useEffect(() => {
     callbacksRef.current = { onInsert, onUpdate, onDelete, onPayload, onSync };
-  }, [onInsert, onUpdate, onDelete, onPayload, onSync]);
+    tablesRef.current = new Set(tableKey.split(','));
+  }, [onInsert, onUpdate, onDelete, onPayload, onSync, tableKey]);
 
-  const channelRef = useRef(null);
+  useEffect(() => {
+    connectedRef.current = isRealtimeConnected;
+  }, [isRealtimeConnected]);
 
-  // Cleanup helper
   const teardownChannel = useCallback(() => {
-    if (channelRef.current) {
-      try {
-        const client = getSupabase();
-        if (client) {
-          client.removeChannel(channelRef.current);
-        } else {
-          channelRef.current.unsubscribe();
-        }
-      } catch (err) {
-        console.warn('[useRealtimeSync] Error tearing down channel:', err);
-      }
-      channelRef.current = null;
-    }
+    subscriptionRef.current?.unsubscribe();
+    subscriptionRef.current = null;
+    connectedRef.current = false;
     setIsRealtimeConnected(false);
     setChannelStatus('DISCONNECTED');
-  }, []);
+  }, [setIsRealtimeConnected, setChannelStatus]);
 
-  // Setup channel helper
   const setupChannel = useCallback(() => {
     teardownChannel();
+    if (!enabled || !isVaultConfigured() || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
 
-    if (!enabled || !isVaultConfigured() || (typeof navigator !== 'undefined' && !navigator.onLine)) {
-      return;
-    }
+    setChannelStatus('SUBSCRIBING');
+    subscriptionRef.current = subscribeRealtimeChanges({
+      onPayload: (payload) => {
+        if (payload.schema !== schema || !tablesRef.current.has(payload.table)) return;
+        setLastEvent({ ...payload, receivedAt: new Date().toISOString() });
+        callbacksRef.current.onPayload?.(payload);
+        const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
+        if (!row) return;
+        if (payload.eventType === 'INSERT') callbacksRef.current.onInsert?.(row, payload);
+        if (payload.eventType === 'UPDATE') callbacksRef.current.onUpdate?.(row, payload);
+        if (payload.eventType === 'DELETE') callbacksRef.current.onDelete?.(row, payload);
+      },
+      onStatus: (status, subscriptionError) => {
+        setChannelStatus(status);
+        if (status === 'SUBSCRIBED') {
+          connectedRef.current = true;
+          setIsRealtimeConnected(true);
+          setError(null);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          connectedRef.current = false;
+          setIsRealtimeConnected(false);
+          setError(subscriptionError || new Error(`Channel status: ${status}`));
+        } else if (status === 'CLOSED') {
+          connectedRef.current = false;
+          setIsRealtimeConnected(false);
+        }
+      }
+    });
+  }, [
+    enabled,
+    schema,
+    teardownChannel,
+    setChannelStatus,
+    setLastEvent,
+    setIsRealtimeConnected,
+    setError
+  ]);
 
-    const client = getSupabase();
-    if (!client) {
-      return;
-    }
-
-    try {
-      setChannelStatus('SUBSCRIBING');
-      const channelId = `realtime_${table}_${Date.now()}`;
-
-      const channel = client
-        .channel(channelId)
-        .on(
-          'postgres_changes',
-          { event: '*', schema, table },
-          (payload) => {
-            const timestamp = new Date().toISOString();
-            setLastEvent({ ...payload, receivedAt: timestamp });
-
-            if (callbacksRef.current.onPayload) {
-              callbacksRef.current.onPayload(payload);
-            }
-
-            switch (payload.eventType) {
-              case 'INSERT':
-                if (callbacksRef.current.onInsert) {
-                  callbacksRef.current.onInsert(payload.new, payload);
-                }
-                break;
-              case 'UPDATE':
-                if (callbacksRef.current.onUpdate) {
-                  callbacksRef.current.onUpdate(payload.new, payload);
-                }
-                break;
-              case 'DELETE':
-                if (callbacksRef.current.onDelete) {
-                  callbacksRef.current.onDelete(payload.old, payload);
-                }
-                break;
-              default:
-                break;
-            }
-          }
-        )
-        .subscribe((status, subError) => {
-          setChannelStatus(status);
-          if (status === 'SUBSCRIBED') {
-            setIsRealtimeConnected(true);
-            setError(null);
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            setIsRealtimeConnected(false);
-            setError(subError || new Error(`Channel status: ${status}`));
-          } else if (status === 'CLOSED') {
-            setIsRealtimeConnected(false);
-          }
-        });
-
-      channelRef.current = channel;
-    } catch (err) {
-      console.error('[useRealtimeSync] Failed to initialize realtime channel:', err);
-      setError(err);
-      setIsRealtimeConnected(false);
-      setChannelStatus('ERROR');
-    }
-  }, [table, schema, enabled, teardownChannel]);
-
-  // Reconciliation handler to guard against state desynchronization
   const handleResync = useCallback(() => {
-    if (callbacksRef.current.onSync) {
-      callbacksRef.current.onSync();
-    }
+    callbacksRef.current.onSync?.();
   }, []);
 
-  // Network online/offline and visibility event listeners
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      // When network comes back online:
-      // 1. Re-establish realtime channel
       setupChannel();
-      // 2. Trigger reconciliation to guard against state desync while offline
       handleResync();
     };
-
     const handleOffline = () => {
       setIsOnline(false);
-      setIsRealtimeConnected(false);
-      setChannelStatus('DISCONNECTED');
       teardownChannel();
     };
-
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && navigator.onLine) {
-        // App brought to foreground: check channel health, resync
-        if (!channelRef.current || !isRealtimeConnected) {
-          setupChannel();
-        }
+        if (!subscriptionRef.current || !connectedRef.current) setupChannel();
         handleResync();
       }
     };
-
     const handleVaultChange = () => {
       setupChannel();
       handleResync();
@@ -179,11 +117,10 @@ export function useRealtimeSync(options = {}) {
     window.addEventListener('offline', handleOffline);
     window.addEventListener('grace_vault_credentials_changed', handleVaultChange);
     document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // Initial setup on mount
-    setupChannel();
+    const setupTimer = window.setTimeout(setupChannel, 0);
 
     return () => {
+      window.clearTimeout(setupTimer);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('grace_vault_credentials_changed', handleVaultChange);
@@ -192,6 +129,11 @@ export function useRealtimeSync(options = {}) {
     };
   }, [setupChannel, teardownChannel, handleResync]);
 
+  const resync = useCallback(() => {
+    setupChannel();
+    handleResync();
+  }, [setupChannel, handleResync]);
+
   return {
     isRealtimeConnected,
     channelStatus,
@@ -199,10 +141,6 @@ export function useRealtimeSync(options = {}) {
     isOffline: !isOnline,
     lastEvent,
     error,
-    resync: () => {
-      setupChannel();
-      handleResync();
-    }
+    resync
   };
 }
-

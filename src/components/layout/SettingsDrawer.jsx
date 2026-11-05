@@ -1,51 +1,88 @@
-// src/components/layout/UserProfileDrawer.jsx
-import React, { useState, useEffect } from 'react';
+// src/components/layout/SettingsDrawer.jsx
+import { useState } from 'react';
 import { 
   X, Database, Cloud, ShieldCheck, HeartHandshake, Palette, QrCode,
   Key, Eye, EyeOff, Check, AlertCircle, RefreshCw, Download, 
-  Upload, Trash2, Sun, CloudRain, Moon, Sunset, Sunrise, Sparkles, Sliders
+  Upload, Trash2, Sun, CloudRain, Moon, Sunset, Sunrise, Sparkles, Sliders,
+  Boxes, Wallet, Building2, Users, UserPlus, ArrowLeftRight,
+  ChevronRight, Bell, Languages, LockKeyhole
 } from 'lucide-react';
-import { 
-  getVaultCredentials, 
-  saveVaultCredentials, 
-  clearVaultCredentials, 
-  testSupabaseConnection, 
-  isVaultConfigured 
+import {
+  getVaultCredentials,
+  saveVaultCredentials,
+  clearVaultCredentials,
+  testSupabaseConnection,
+  isVaultConfigured
 } from '../../utils/supabaseClient';
 import { QRCodeSVG } from 'qrcode.react';
 import { createPairingPayload } from '../../utils/supabaseClient';
+import { isRestrictedSubTab, ROLES } from '../../utils/accessControl';
+import { DEFAULT_CAMPUSES } from '../../constants/churchDefaults';
+import { bidirectionalSyncMembers } from '../../services/syncEngine';
+import { useTranslation } from '../../context/LanguageContext';
 
-export default function UserProfileDrawer({ 
+export default function SettingsDrawer({
   isOpen, 
   onClose, 
   theme = {}, 
   userProfile = {},
   initialTab = 'vault',
-  themeEngine = {}
+  themeEngine = {},
+  onSignOut,
+  onAddStaff,
+  onSwitchAccount,
+  campuses = DEFAULT_CAMPUSES,
+  onCampusesChange,
+  onOpenProfile,
+  onOpenPassword
 }) {
+  const { t, currentLang, changeLanguage, availableLanguages } = useTranslation();
   const [activeTab, setActiveTab] = useState(initialTab || 'vault');
-
-  useEffect(() => {
-    if (initialTab) {
-      setActiveTab(initialTab);
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  const [initialCredentials] = useState(() => getVaultCredentials());
+  const [isLanguagePickerOpen, setIsLanguagePickerOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(() => {
+    try {
+      return Number(localStorage.getItem('grace_unread_notification_count')) || 0;
+    } catch {
+      return 0;
     }
-  }, [initialTab, isOpen]);
+  });
+  const [appearanceMode, setAppearanceMode] = useState(() => {
+    try {
+      return localStorage.getItem('grace_appearance_mode') || 'system';
+    } catch {
+      return 'system';
+    }
+  });
+  const [lastSyncedTime, setLastSyncedTime] = useState(() => {
+    try {
+      return localStorage.getItem('grace_last_synced_time') || '';
+    } catch {
+      return '';
+    }
+  });
 
   // 1. Cloud Credentials State
-  const [cloudUrl, setCloudUrl] = useState('');
-  const [cloudKey, setCloudKey] = useState('');
+  const [cloudUrl, setCloudUrl] = useState(initialCredentials.supabaseUrl || '');
+  const [cloudKey, setCloudKey] = useState(initialCredentials.supabaseAnonKey || '');
   const [showKey, setShowKey] = useState(false);
   const [testStatus, setTestStatus] = useState(null); // { loading, ok, message }
-  const [isCloudConfigured, setIsCloudConfigured] = useState(false);
+  const [isCloudConfigured, setIsCloudConfigured] = useState(isVaultConfigured());
   const [isPairingQrVisible, setIsPairingQrVisible] = useState(false);
   const pairingPayload = createPairingPayload({ campus: 'Headquarters' });
 
-  useEffect(() => {
-    const creds = getVaultCredentials();
-    setCloudUrl(creds.supabaseUrl || '');
-    setCloudKey(creds.supabaseAnonKey || '');
-    setIsCloudConfigured(isVaultConfigured());
-  }, [isOpen]);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) {
+      setActiveTab(initialTab || 'vault');
+      const credentials = getVaultCredentials();
+      setCloudUrl(credentials.supabaseUrl || '');
+      setCloudKey(credentials.supabaseAnonKey || '');
+      setIsCloudConfigured(isVaultConfigured());
+    }
+  }
 
   const handleTestConnection = async () => {
     setTestStatus({ loading: true, ok: null, message: 'Testing Supabase cloud connection...' });
@@ -164,6 +201,97 @@ export default function UserProfileDrawer({
     }
   });
   const [newTalentName, setNewTalentName] = useState('');
+  const [cellGroups, setCellGroups] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('grace_cell_groups') || '[]');
+    } catch (error) {
+      console.warn('[Settings] Unable to read saved cell groups:', error);
+      return [];
+    }
+  });
+  const [ministryRoles, setMinistryRoles] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('grace_ministry_roles') || JSON.stringify(Object.values(ROLES)));
+    } catch (error) {
+      console.warn('[Settings] Unable to read ministry roles:', error);
+      return Object.values(ROLES);
+    }
+  });
+  const [newCellGroup, setNewCellGroup] = useState('');
+  const [newCampusName, setNewCampusName] = useState('');
+  const [inventory, setInventory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('grace_assets_inventory') || '[]');
+    } catch (error) {
+      console.warn('[Settings] Unable to read saved inventory:', error);
+      return [];
+    }
+  });
+  const [newAssetName, setNewAssetName] = useState('');
+  const [newAssetQuantity, setNewAssetQuantity] = useState('1');
+  const [liquidity, setLiquidity] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('grace_finance_liquidity') || '{"cash":0,"bank":0,"mode":"cash"}');
+    } catch (error) {
+      console.warn('[Settings] Unable to read saved liquidity:', error);
+      return { cash: 0, bank: 0, mode: 'cash' };
+    }
+  });
+  const [manualSyncMessage, setManualSyncMessage] = useState('');
+
+  const persistArray = (key, value) => {
+    localStorage.setItem(key, JSON.stringify(value));
+  };
+  const handleAddCellGroup = () => {
+    const name = newCellGroup.trim();
+    if (!name || cellGroups.includes(name)) return;
+    const updated = [...cellGroups, name];
+    setCellGroups(updated);
+    persistArray('grace_cell_groups', updated);
+    setNewCellGroup('');
+  };
+  const handleAddCampus = () => {
+    const name = newCampusName.trim();
+    if (!name || campuses.some(campus => campus.name.toLowerCase() === name.toLowerCase())) return;
+    const updated = [...campuses, { id: `campus-${Date.now()}`, name, code: '', city: '', isHQ: false }];
+    onCampusesChange?.(updated);
+    setNewCampusName('');
+  };
+  const handleAddAsset = () => {
+    const name = newAssetName.trim();
+    const quantity = Number(newAssetQuantity);
+    if (!name || !Number.isInteger(quantity) || quantity < 1) return;
+    const updated = [...inventory, { id: `asset-${Date.now()}`, name, quantity }];
+    setInventory(updated);
+    persistArray('grace_assets_inventory', updated);
+    setNewAssetName('');
+    setNewAssetQuantity('1');
+  };
+  const updateLiquidity = updates => {
+    setLiquidity(current => {
+      const updated = { ...current, ...updates };
+      localStorage.setItem('grace_finance_liquidity', JSON.stringify(updated));
+      return updated;
+    });
+  };
+  const handleManualSync = async () => {
+    if (!isVaultConfigured() || !navigator.onLine) {
+      setManualSyncMessage('Local Vault is ready. Connect to the internet and pair Supabase to sync.');
+      return;
+    }
+    setManualSyncMessage('Synchronizing local and cloud members…');
+    try {
+      const result = await bidirectionalSyncMembers();
+      setManualSyncMessage(`Sync complete: ${result.pushed} uploaded, ${result.pulled} downloaded, ${result.merged.length} total merged.`);
+    } catch (error) {
+      setManualSyncMessage(`Cloud sync failed: ${error.message}`);
+      return;
+    }
+    const syncedAt = new Date().toISOString();
+    const formattedTime = new Date(syncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    localStorage.setItem('grace_last_synced_time', formattedTime);
+    setLastSyncedTime(formattedTime);
+  };
 
   const handleAddTalent = () => {
     const trimmed = newTalentName.trim();
@@ -187,59 +315,171 @@ export default function UserProfileDrawer({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-10 px-3 select-none">
-      <div 
+    <div className="fixed inset-0 z-50 flex items-end select-none sm:justify-end">
+      <button
+        type="button"
+        aria-label="Close settings"
         className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-300"
         onClick={onClose} 
       />
 
       <div 
-        className="relative z-10 w-full max-w-lg rounded-[32px] p-5 shadow-2xl max-h-[88vh] flex flex-col animate-in slide-in-from-top-6 fade-in duration-300"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('settings')}
+        className="relative z-10 flex max-h-[94vh] w-full flex-col rounded-t-[30px] border p-4 shadow-2xl animate-in slide-in-from-bottom-10 fade-in duration-300 sm:h-full sm:max-h-screen sm:max-w-md sm:rounded-none sm:rounded-l-[30px] sm:p-5 sm:animate-in sm:slide-in-from-right-10"
         style={{ 
           background: 'rgba(15, 23, 42, 0.88)',
           backdropFilter: `blur(${themeEngine.blurDepth || 40}px)`,
           WebkitBackdropFilter: `blur(${themeEngine.blurDepth || 40}px)`,
-          border: '1px solid rgba(255, 255, 255, 0.15)',
+          borderColor: 'rgba(255, 255, 255, 0.15)',
           boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.25)',
           color: theme?.textMain || '#ffffff'
         }}
       >
-        {/* 1. Header Bar */}
-        <div className="flex items-center justify-between pb-3.5 border-b border-white/10 shrink-0">
-          <div className="flex items-center gap-3">
-            <div 
-              className="w-10 h-10 rounded-2xl flex items-center justify-center font-black text-white text-xs shadow-md border border-white/20"
-              style={{ background: theme?.accent || '#06b6d4' }}
-            >
-              RS
-            </div>
-            <div>
-              <h3 className="text-sm font-black leading-tight">
-                {userProfile?.name || 'Pastor Raja S'}
-              </h3>
-              <span className="text-[10px] text-cyan-400 font-mono block mt-0.5">
-                GraceOS Console • Lead Pastor
-              </span>
-            </div>
+        <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-3">
+          <div>
+            <h2 className="text-lg font-black">{t('settings')}</h2>
+            <p className="text-[10px] text-white/50">{t('settings_summary')}</p>
           </div>
-          <button 
-            type="button" 
-            onClick={onClose} 
-            className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 active:scale-90 transition cursor-pointer"
-          >
-            <X size={15} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full bg-white/10 p-2 text-white/70 transition hover:bg-white/20 active:scale-90"
+              aria-label={t('cancel')}
+            >
+              <X size={15} />
+            </button>
+          </div>
         </div>
 
-        {/* 2. Settings Sub-Tab Navigation Bar (5 Panels) */}
-        <div className="flex gap-1.5 py-3 border-b border-white/10 overflow-x-auto scrollbar-none shrink-0">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          <button type="button" onClick={onOpenProfile} className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left transition hover:bg-white/[0.09] active:scale-[0.99]">
+            <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full border border-emerald-300/40 bg-emerald-400/15">
+              {userProfile?.avatar
+                ? <img src={userProfile.avatar} alt="" className="h-full w-full object-cover" />
+                : <span className="flex h-full w-full items-center justify-center text-sm font-black text-emerald-200">{(userProfile?.name || 'Raja S').split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase()}</span>}
+              <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-slate-950 bg-emerald-400" />
+            </div>
+            <span className="min-w-0 flex-1">
+              <strong className="block truncate text-sm">{userProfile?.name || 'Raja S'}</strong>
+              <small className="mt-0.5 block truncate text-[10px] text-white/55">{userProfile?.title || t('pastor')} · {userProfile?.role || 'MEMBER'}</small>
+              <span className="mt-1 inline-block text-[10px] font-bold text-emerald-200">{t('view_profile')} <span aria-hidden="true">›</span></span>
+            </span>
+            <ChevronRight size={16} className="text-white/40" />
+          </button>
+
+          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            <h3 className="mb-2 px-1 text-[9px] font-black uppercase tracking-[0.18em] text-white/40">{t('account')}</h3>
+            <button type="button" onClick={() => {
+              setIsNotificationsOpen(true);
+              setUnreadCount(0);
+              localStorage.setItem('grace_unread_notification_count', '0');
+            }} className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-xs hover:bg-white/5">
+              <Bell size={14} className="text-amber-300" /><span className="flex-1">{t('notifications')}</span>
+              {unreadCount > 0 && <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[9px] font-black">{unreadCount}</span>}
+              <ChevronRight size={14} className="text-white/35" />
+            </button>
+            <button type="button" onClick={onOpenPassword} className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-xs hover:bg-white/5">
+              <LockKeyhole size={14} className="text-cyan-300" /><span className="flex-1">{t('change_password')}</span><ChevronRight size={14} className="text-white/35" />
+            </button>
+          </section>
+
+          <section className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            <h3 className="px-1 text-[9px] font-black uppercase tracking-[0.18em] text-white/40">{t('preferences')}</h3>
+            <button type="button" onClick={() => setIsLanguagePickerOpen(true)} className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-xs hover:bg-white/5">
+              <Languages size={14} className="text-violet-300" /><span className="flex-1">{t('language')}</span>
+              <span className="text-white/55">{availableLanguages.find(language => language.code === currentLang)?.nativeName}</span><ChevronRight size={14} className="text-white/35" />
+            </button>
+            <div>
+              <div className="mb-2 flex items-center gap-2 px-2 text-xs"><Palette size={14} className="text-rose-300" /><span>{t('appearance')}</span></div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[
+                  ['pure-dark', t('appearance_pure_dark')],
+                  ['ink', t('appearance_ink')],
+                  ['light', t('appearance_light')],
+                  ['system', t('appearance_system')]
+                ].map(([mode, label]) => (
+                  <button key={mode} type="button" aria-pressed={appearanceMode === mode} onClick={() => {
+                    setAppearanceMode(mode);
+                    themeEngine.handleSelectAppearance?.(mode);
+                  }} className={`rounded-lg border px-1 py-2 text-[9px] font-bold ${appearanceMode === mode ? 'border-emerald-300/60 bg-emerald-400/15 text-emerald-100' : 'border-white/10 text-white/60 hover:bg-white/5'}`}>{label}</button>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center justify-between px-1">
+                <span className="text-[10px] text-white/55">{t('accent_color')}</span>
+                <div className="flex gap-2">
+                  {[
+                    ['Cyan', '#06b6d4'], ['Emerald', '#10b981'], ['Amber', '#f59e0b'],
+                    ['Rose', '#f43f5e'], ['Violet', '#8b5cf6'], ['Slate', '#64748b']
+                  ].map(([name, color]) => (
+                    <button key={name} type="button" title={name} aria-label={`${name} accent`} aria-pressed={(themeEngine.selectedAccent || theme?.accent) === color} onClick={() => themeEngine.handleSelectAccent?.(color)} className={`h-5 w-5 rounded-full border transition active:scale-90 ${(themeEngine.selectedAccent || theme?.accent) === color ? 'border-white ring-2 ring-white/35' : 'border-white/20'}`} style={{ backgroundColor: color }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            <h3 className="mb-2 px-1 text-[9px] font-black uppercase tracking-[0.18em] text-white/40">{t('ministry_and_branches')} · {t('stock_and_inventory')} · {t('liquid_funds_and_treasury')}</h3>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                ['vault', t('data_and_sync'), Database],
+                ['ministry', t('ministry_and_branches'), HeartHandshake],
+                ['assets', t('stock_and_inventory'), Boxes],
+                ['finance', t('liquid_funds_and_treasury'), Wallet]
+              ].map(([tab, label, Icon]) => (
+                <button key={tab} type="button" onClick={() => setActiveTab(tab)} className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[9px] font-bold ${activeTab === tab ? 'border-cyan-300/40 bg-cyan-400/10 text-cyan-100' : 'border-white/10 text-white/65 hover:bg-white/5'}`}><Icon size={11} />{label}</button>
+              ))}
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-black/20 px-2.5 py-2 text-[10px]">
+              <span className="flex min-w-0 items-center gap-1.5 text-white/65"><span className={`h-2 w-2 shrink-0 rounded-full ${isCloudConfigured ? 'bg-emerald-400' : 'bg-amber-400'}`} />{isCloudConfigured ? t('supabase_connected') : t('local_vault')} · {lastSyncedTime || t('not_synced_yet')}</span>
+              <button type="button" onClick={handleManualSync} className="shrink-0 rounded-lg bg-emerald-500/20 px-2 py-1 font-bold text-emerald-200 hover:bg-emerald-500/30">{t('sync_now')}</button>
+            </div>
+          </section>
+
+          {isLanguagePickerOpen && (
+            <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/65 p-3 backdrop-blur-sm sm:items-center">
+              <section role="dialog" aria-modal="true" aria-label={t('language')} className="w-full max-w-sm rounded-3xl border border-white/15 bg-slate-900 p-4 shadow-2xl">
+                <div className="mb-3 flex items-center justify-between"><h3 className="font-bold">{t('language')}</h3><button type="button" onClick={() => setIsLanguagePickerOpen(false)} aria-label={t('cancel')}><X size={17} /></button></div>
+                <div className="space-y-1">
+                  {availableLanguages.map(language => (
+                    <button key={language.code} type="button" aria-pressed={currentLang === language.code} onClick={() => {
+                      changeLanguage(language.code);
+                      setIsLanguagePickerOpen(false);
+                    }} className={`flex w-full items-center justify-between rounded-xl p-3 text-sm ${currentLang === language.code ? 'bg-emerald-500/20 text-emerald-100' : 'hover:bg-white/5'}`}><span>{language.nativeName}</span><span className="text-xs text-white/45">{language.name}</span></button>
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
+          {isNotificationsOpen && (
+            <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm">
+              <section role="dialog" aria-modal="true" aria-label={t('notifications')} className="w-full max-w-sm rounded-3xl border border-white/15 bg-slate-900 p-5 shadow-2xl">
+                <div className="mb-3 flex items-center justify-between"><h3 className="font-bold">{t('notifications')}</h3><button type="button" onClick={() => setIsNotificationsOpen(false)} aria-label={t('cancel')}><X size={17} /></button></div>
+                <p className="rounded-xl bg-white/[0.04] p-4 text-sm text-white/60">{t('notifications_empty')}</p>
+              </section>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between px-2 text-[9px] text-white/35">
+            <span>{t('app_version')} v4.6.0</span>
+            {onSignOut && <button type="button" onClick={onSignOut} className="rounded-full border border-rose-400/25 bg-rose-500/10 px-3 py-1.5 font-bold text-rose-300 hover:bg-rose-500/20">{t('sign_out')}</button>}
+          </div>
+
+        {/* Settings Sub-Tab Navigation Bar */}
+        <div className="flex gap-1.5 border-b border-white/10 py-3 overflow-x-auto scrollbar-none shrink-0">
           {[
-            { id: 'vault', label: 'Local Vault', icon: Database },
-            { id: 'cloud', label: 'Cloud Sync', icon: Cloud },
+            { id: 'vault', label: t('data_and_sync'), icon: Database },
+            { id: 'cloud', label: t('cloud_sync'), icon: Cloud },
             { id: 'staff', label: 'Staff PIN', icon: Key },
-            { id: 'ministry', label: 'Ministries', icon: HeartHandshake },
+            { id: 'ministry', label: t('ministry_and_branches'), icon: HeartHandshake },
+            { id: 'assets', label: t('stock_and_inventory'), icon: Boxes },
+            { id: 'finance', label: t('liquid_funds_and_treasury'), icon: Wallet },
+            { id: 'account', label: t('account'), icon: UserPlus },
             { id: 'theme', label: 'Liquid Theme', icon: Palette }
-          ].map(tab => {
+          ].filter(tab => !isRestrictedSubTab(userProfile?.role, tab.id)).map(tab => {
             const Icon = tab.icon;
             const isCurrent = activeTab === tab.id;
             return (
@@ -266,7 +506,7 @@ export default function UserProfileDrawer({
         </div>
 
         {/* 3. Panel Body Area */}
-        <div className="overflow-y-auto pr-1 py-3.5 space-y-4 text-xs grow">
+        <div className="pr-1 py-3.5 space-y-4 text-xs">
           
           {/* ========================================================= */}
           {/* PANEL 1: LOCAL DRIVE VAULT */}
@@ -294,6 +534,13 @@ export default function UserProfileDrawer({
                     Engine: <strong className="text-cyan-300">Indexed Local Vault</strong>
                   </div>
                 </div>
+                <div className="flex items-center justify-between gap-2 border-t border-white/10 pt-2">
+                  <span className="text-[10px] opacity-70">Cloud: {isCloudConfigured ? 'Supabase paired' : 'Not paired'}</span>
+                  <button type="button" onClick={handleManualSync} className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-300/25 bg-cyan-400/10 px-2.5 py-1.5 text-[10px] font-bold text-cyan-200 hover:bg-cyan-400/20">
+                    <RefreshCw size={11} /> Sync Now
+                  </button>
+                </div>
+                {manualSyncMessage && <p role="status" className="text-[10px] text-cyan-100/80">{manualSyncMessage}</p>}
               </div>
 
               <div className="p-3.5 rounded-2xl bg-cyan-500/[0.08] border border-cyan-400/20 space-y-3">
@@ -578,7 +825,119 @@ export default function UserProfileDrawer({
                   </div>
                 ))}
               </div>
+
+              <section className="space-y-2 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                <h4 className="flex items-center gap-1.5 font-bold"><Users size={13} className="text-emerald-300" /> Ministry Roles & Cell Groups</h4>
+                <p className="text-[10px] text-white/55">Choose roles available in the local ministry directory.</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {Object.values(ROLES).map(roleName => (
+                    <label key={roleName} className="flex items-center gap-2 rounded-lg bg-black/20 px-2.5 py-2 text-[10px]">
+                      <input type="checkbox" checked={ministryRoles.includes(roleName)} onChange={event => {
+                        const updated = event.target.checked
+                          ? [...ministryRoles, roleName]
+                          : ministryRoles.filter(item => item !== roleName);
+                        setMinistryRoles(updated);
+                        persistArray('grace_ministry_roles', updated);
+                      }} className="accent-emerald-400" />
+                      {roleName}
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input value={newCellGroup} onChange={event => setNewCellGroup(event.target.value)} placeholder="New cell group" className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-xs text-white outline-none focus:border-cyan-400" />
+                  <button type="button" onClick={handleAddCellGroup} className="rounded-xl bg-cyan-500/80 px-3 text-xs font-bold text-white">Add</button>
+                </div>
+                <div className="space-y-1">
+                  {cellGroups.length ? cellGroups.map(group => (
+                    <div key={group} className="flex items-center justify-between rounded-lg bg-black/20 px-2.5 py-2">
+                      <span>{group}</span>
+                      <button type="button" aria-label={`Remove ${group}`} onClick={() => {
+                        const updated = cellGroups.filter(item => item !== group);
+                        setCellGroups(updated);
+                        persistArray('grace_cell_groups', updated);
+                      }} className="text-rose-300 hover:text-rose-200"><Trash2 size={12} /></button>
+                    </div>
+                  )) : <p className="text-[10px] text-white/45">No cell groups added yet.</p>}
+                </div>
+              </section>
+
+              <section className="space-y-2 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                <h4 className="flex items-center gap-1.5 font-bold"><Building2 size={13} className="text-amber-300" /> Campuses</h4>
+                <div className="flex gap-2">
+                  <input value={newCampusName} onChange={event => setNewCampusName(event.target.value)} placeholder="New campus name" className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-xs text-white outline-none focus:border-cyan-400" />
+                  <button type="button" onClick={handleAddCampus} className="rounded-xl bg-cyan-500/80 px-3 text-xs font-bold text-white">Add</button>
+                </div>
+                <div className="space-y-1">
+                  {campuses.map(campus => (
+                    <div key={campus.id} className="flex items-center justify-between rounded-lg bg-black/20 px-2.5 py-2">
+                      <span>{campus.name}{campus.isHQ ? ' · HQ' : ''}</span>
+                      {!campus.isHQ && <button type="button" aria-label={`Remove ${campus.name}`} onClick={() => onCampusesChange?.(campuses.filter(item => item.id !== campus.id))} className="text-rose-300 hover:text-rose-200"><Trash2 size={12} /></button>}
+                    </div>
+                  ))}
+                </div>
+              </section>
             </div>
+          )}
+
+          {activeTab === 'assets' && (
+            <section className="space-y-3">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                <h4 className="flex items-center gap-2 font-bold"><Boxes size={14} className="text-cyan-300" /> Stock & Equipment Inventory</h4>
+                <p className="mt-1 text-[10px] text-white/55">Inventory entries are saved locally on this device.</p>
+              </div>
+              <div className="flex gap-2">
+                <input value={newAssetName} onChange={event => setNewAssetName(event.target.value)} placeholder="Equipment or stock item" className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-xs text-white outline-none focus:border-cyan-400" />
+                <input type="number" min="1" step="1" aria-label="Quantity" value={newAssetQuantity} onChange={event => setNewAssetQuantity(event.target.value)} className="w-16 rounded-xl border border-white/15 bg-black/30 px-2 py-2 text-xs text-white outline-none focus:border-cyan-400" />
+                <button type="button" onClick={handleAddAsset} className="rounded-xl bg-cyan-500/80 px-3 text-xs font-bold text-white">Add</button>
+              </div>
+              <div className="space-y-1.5">
+                {inventory.map(item => (
+                  <div key={item.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                    <span>{item.name}</span><span className="flex items-center gap-3"><strong>× {item.quantity}</strong><button type="button" aria-label={`Remove ${item.name}`} onClick={() => {
+                      const updated = inventory.filter(asset => asset.id !== item.id);
+                      setInventory(updated);
+                      persistArray('grace_assets_inventory', updated);
+                    }} className="text-rose-300"><Trash2 size={13} /></button></span>
+                  </div>
+                ))}
+                {!inventory.length && <p className="rounded-xl border border-dashed border-white/15 p-4 text-center text-white/45">No inventory items yet.</p>}
+              </div>
+            </section>
+          )}
+
+          {activeTab === 'finance' && (
+            <section className="space-y-3">
+              <div className="rounded-2xl border border-emerald-300/15 bg-emerald-400/[0.06] p-4">
+                <h4 className="flex items-center gap-2 font-bold"><Wallet size={14} className="text-emerald-300" /> Liquid Funds Monitor</h4>
+                <p className="mt-2 text-2xl font-black text-emerald-200">{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(liquidity.cash || 0) + Number(liquidity.bank || 0))}</p>
+                <p className="text-[10px] text-white/55">Combined cash-in-hand and bank balance • locally stored</p>
+              </div>
+              <label className="block rounded-xl border border-white/10 bg-white/[0.04] p-3 text-xs font-semibold">Cash in hand
+                <input type="number" min="0" value={liquidity.cash} onChange={event => updateLiquidity({ cash: Number(event.target.value) })} className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white" />
+              </label>
+              <label className="block rounded-xl border border-white/10 bg-white/[0.04] p-3 text-xs font-semibold">Bank balance
+                <input type="number" min="0" value={liquidity.bank} onChange={event => updateLiquidity({ bank: Number(event.target.value) })} className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white" />
+              </label>
+              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                <span className="text-xs font-semibold">Primary liquidity view</span>
+                <div className="flex rounded-lg bg-black/30 p-1">
+                  {['cash', 'bank'].map(mode => <button key={mode} type="button" aria-pressed={liquidity.mode === mode} onClick={() => updateLiquidity({ mode })} className={`rounded-md px-3 py-1.5 text-[10px] font-bold capitalize ${liquidity.mode === mode ? 'bg-emerald-500/80 text-white' : 'text-white/60'}`}>{mode}</button>)}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {activeTab === 'account' && (
+            <section className="space-y-3">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <h4 className="font-bold">{userProfile?.name || 'GraceOS User'}</h4>
+                <p className="mt-1 text-[11px] text-white/55">{userProfile?.email}</p>
+                <span className="mt-2 inline-flex rounded-full bg-emerald-400/10 px-2 py-1 text-[9px] font-bold text-emerald-200">{userProfile?.role || 'MEMBER'}</span>
+              </div>
+              <button type="button" onClick={onAddStaff} className="flex w-full items-center gap-2 rounded-xl border border-cyan-300/20 bg-cyan-400/10 p-3 text-left text-xs font-bold text-cyan-100 hover:bg-cyan-400/20"><UserPlus size={14} /> Add Staff Account</button>
+              <button type="button" onClick={onSwitchAccount} className="flex w-full items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] p-3 text-left text-xs font-bold text-white/80 hover:bg-white/10"><ArrowLeftRight size={14} /> Sign In / Switch Account</button>
+              {onSignOut && <button type="button" onClick={onSignOut} className="w-full rounded-xl border border-rose-300/20 bg-rose-400/10 p-3 text-left text-xs font-bold text-rose-200 hover:bg-rose-400/20">Sign Out</button>}
+            </section>
           )}
 
           {/* ========================================================= */}
@@ -765,12 +1124,12 @@ export default function UserProfileDrawer({
                   })}
                 </div>
               </div>
-
             </div>
           )}
 
         </div>
 
+        </div>
       </div>
     </div>
   );

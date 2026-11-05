@@ -1,12 +1,13 @@
-import React from 'react';
 import { getNavigationConfig } from '../../constants/navigationConfig';
 import { useTranslation } from '../../hooks/useTranslation';
+import { canAccessTab, ROLES } from '../../utils/accessControl';
 
 export default function NavSubPopups({ 
   activeSubMenu, 
   onClose, 
   onSelectSubItem, 
-  theme 
+  theme,
+  role = ROLES.MEMBER
 }) {
   const { language, t } = useTranslation();
   const navigation = getNavigationConfig(language);
@@ -47,7 +48,7 @@ export default function NavSubPopups({
         </div>
 
         <div className="space-y-1">
-          {menuItems.map((item) => {
+          {menuItems.filter((item) => canAccessTab(role, item.id)).map((item) => {
             const Icon = item.icon;
             return (
               <button

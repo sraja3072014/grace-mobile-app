@@ -2,6 +2,9 @@
 import { getSupabase } from '../utils/supabaseClient';
 import { sanitizeMemberPayload } from '../utils/schemaSanitizer';
 
+
+// Re-export bidirectional sync engine so callers can import from one place
+export { bidirectionalSyncMembers, getSyncMeta } from './syncEngine';
 export const MEMBERS_CACHE_KEY = 'graceos_vault_members';
 export const MEMBERS_SYNC_META_KEY = 'grace_members_sync_meta';
 
@@ -80,21 +83,13 @@ export function removeCachedMember(memberId) {
   }
 }
 
-function requireSupabase() {
-  const client = getSupabase();
-  if (!client) {
-    throw new Error('Local Vault mode active: Cloud Supabase is not configured.');
-  }
-  return client;
-}
-
 /**
  * Fetch all members with Offline-First Resilience:
  * 1. Checks network status; if offline, serves cached directory immediately.
  * 2. Fetches from Supabase and atomically updates local vault cache on success.
  * 3. Gracefully catches network/cloud failures and falls back to cached records.
  */
-export async function fetchAllMembers(options = {}) {
+export async function fetchAllMembers() {
   const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
 
   // 1. Explicitly offline: serve cached directory
@@ -224,7 +219,7 @@ export async function batchUpsertMembers(records = [], removedIds = []) {
       if (upsertError) throw upsertError;
     } catch (error) {
       notifyOfflineVault(error.message || 'Cloud upsert failed');
-      return true;
+      throw error;
     }
   }
 
@@ -239,6 +234,7 @@ export async function batchUpsertMembers(records = [], removedIds = []) {
       if (deleteError) throw deleteError;
     } catch (error) {
       notifyOfflineVault(error.message || 'Cloud delete failed');
+      throw error;
     }
   }
 

@@ -1,5 +1,5 @@
-export const SUPPORTED_LANGUAGES = ['en', 'ta'];
-export const LANGUAGE_STORAGE_KEY = 'grace_language';
+export const SUPPORTED_LANGUAGES = ['en', 'ta', 'hi', 'es'];
+export const LANGUAGE_STORAGE_KEY = 'graceos_locale';
 
 export function formatCurrency(amount, currency = 'INR') {
   return new Intl.NumberFormat('en-IN', {

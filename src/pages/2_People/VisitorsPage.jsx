@@ -1,62 +1,109 @@
 // src/pages/2_People/VisitorsPage.jsx
-import React, { useState, useEffect } from 'react';
-import { 
-  HeartHandshake, UserPlus, Phone, PhoneCall, MessageSquare, 
-  MapPin, Clock, ArrowRight, UserCheck, Sparkles, Search, CheckCircle2 
+import { useState, useEffect, useCallback } from 'react';
+import {
+  HeartHandshake, UserPlus, PhoneCall, MessageSquare,
+  MapPin, ArrowRight, UserCheck, Search, CheckCircle2, Trash2
 } from 'lucide-react';
 import GlassCard from '../../components/common/GlassCard';
-import { upsertMember } from '../../services/memberService';
+import { batchUpsertMembers } from '../../services/memberService';
+import { batchUpsertVisitors, cacheVisitors, getCachedVisitors, syncVisitors } from '../../services/syncEngine';
 import { sanitizeMemberPayload } from '../../utils/schemaSanitizer';
+import { useRealtimeSync } from '../../hooks/useRealtimeSync';
+import { hasPermission, ROLES } from '../../utils/accessControl';
+import { getSupabase } from '../../utils/supabaseClient';
 
-export default function VisitorsPage({ theme }) {
+const INITIAL_VISITORS = [
+  {
+    id: 'VIS-2601',
+    name: 'Bro. Daniel Raj',
+    phone: '+919840166778',
+    area: 'Koduvai Town',
+    invitedBy: 'Bro. David Paul',
+    stage: 'FIRST_VISIT',
+    visitDate: '2026-09-06',
+    notes: 'Looking for youth fellowship and music ministry.'
+  },
+  {
+    id: 'VIS-2602',
+    name: 'Sis. Mercy Priya',
+    phone: '+919840199887',
+    area: 'Tiruppur Road',
+    invitedBy: 'Sister Sarah',
+    stage: 'CONTACTED',
+    visitDate: '2026-08-30',
+    notes: 'Requested pastoral prayer for family business peace.'
+  },
+  {
+    id: 'VIS-2603',
+    name: 'Bro. Stephen Joseph',
+    phone: '+919940088771',
+    area: 'Coimbatore South',
+    invitedBy: 'Ps. Raja S',
+    stage: 'PRAYER_MEET',
+    visitDate: '2026-08-15',
+    notes: 'Attending Friday cottage prayer regularly.'
+  },
+  {
+    id: 'VIS-2604',
+    name: 'Bro. Samuel Sundaram',
+    phone: '+919842266334',
+    area: 'Kangeyam',
+    invitedBy: 'Bro. Victor',
+    stage: 'COMMITTED',
+    visitDate: '2026-08-01',
+    notes: 'Completed believer intake. Ready to convert to Member.'
+  }
+];
+
+export default function VisitorsPage({ theme, role = ROLES.MEMBER }) {
   const [activeSubTab, setActiveSubTab] = useState('pipeline'); // 'pipeline' | 'register'
   const [activeStageFilter, setActiveStageFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMessage, setToastMessage] = useState('');
+  const showToast = useCallback((msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 3000);
+  }, []);
 
-  // ஆரம்பநிலை மாதிரி விருந்தினர்கள் பட்டியல் (Vault வடிவம்)
-  const [visitors, setVisitors] = useState([
-    {
-      id: 'VIS-2601',
-      name: 'Bro. Daniel Raj',
-      phone: '+919840166778',
-      area: 'Koduvai Town',
-      invitedBy: 'Bro. David Paul',
-      stage: 'FIRST_VISIT',
-      visitDate: '2026-09-06',
-      notes: 'Looking for youth fellowship and music ministry.'
-    },
-    {
-      id: 'VIS-2602',
-      name: 'Sis. Mercy Priya',
-      phone: '+919840199887',
-      area: 'Tiruppur Road',
-      invitedBy: 'Sister Sarah',
-      stage: 'CONTACTED',
-      visitDate: '2026-08-30',
-      notes: 'Requested pastoral prayer for family business peace.'
-    },
-    {
-      id: 'VIS-2603',
-      name: 'Bro. Stephen Joseph',
-      phone: '+919940088771',
-      area: 'Coimbatore South',
-      invitedBy: 'Ps. Raja S',
-      stage: 'PRAYER_MEET',
-      visitDate: '2026-08-15',
-      notes: 'Attending Friday cottage prayer regularly.'
-    },
-    {
-      id: 'VIS-2604',
-      name: 'Bro. Samuel Sundaram',
-      phone: '+919842266334',
-      area: 'Kangeyam',
-      invitedBy: 'Bro. Victor',
-      stage: 'COMMITTED',
-      visitDate: '2026-08-01',
-      notes: 'Completed believer intake. Ready to convert to Member.'
+  const [visitors, setVisitors] = useState(() => {
+    const cachedVisitors = getCachedVisitors();
+    return cachedVisitors.length ? cachedVisitors : INITIAL_VISITORS;
+  });
+  const canConvertVisitor = hasPermission(role, 'CONVERT_VISITOR');
+
+  useEffect(() => {
+    cacheVisitors(visitors);
+  }, [visitors]);
+
+  useEffect(() => {
+    let active = true;
+    if (!getCachedVisitors().length) cacheVisitors(INITIAL_VISITORS);
+    syncVisitors()
+      .then(records => {
+        if (active) setVisitors(records);
+      })
+      .catch(error => {
+        console.error('[VisitorsPage] Unable to sync visitors:', error);
+        if (active) showToast('Visitors loaded from local storage; cloud sync failed.');
+      });
+    return () => { active = false; };
+  }, [showToast]);
+
+  useRealtimeSync({
+    tables: ['visitors'],
+    onInsert: row => setVisitors(current => current.some(visitor => visitor.id === String(row.id))
+      ? current
+      : [{ ...row, invitedBy: row.invited_by || row.invitedBy, visitDate: row.visit_date || row.visitDate }, ...current]),
+    onUpdate: row => setVisitors(current => current.map(visitor => visitor.id === String(row.id)
+      ? { ...visitor, ...row, invitedBy: row.invited_by || row.invitedBy || visitor.invitedBy, visitDate: row.visit_date || row.visitDate || visitor.visitDate }
+      : visitor)),
+    onDelete: row => setVisitors(current => current.filter(visitor => visitor.id !== String(row.id))),
+    onSync: () => {
+      syncVisitors()
+        .then(setVisitors)
+        .catch(error => console.error('[VisitorsPage] Realtime reconciliation failed:', error));
     }
-  ]);
+  });
 
   // புதிய விருந்தினர் பதிவு படிவ ஸ்டேட்
   const [regForm, setRegForm] = useState({
@@ -75,11 +122,6 @@ export default function VisitorsPage({ theme }) {
     { id: 'CONVERTED', label: '5. Converted', badge: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' }
   ];
 
-  const showToast = (msg) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(''), 3000);
-  };
-
   // 1. WhatsApp Welcome Message அனுப்புதல்
   const handleSendWelcomeWhatsApp = (visitor) => {
     const cleanPhone = visitor.phone.replace(/[^0-9]/g, '');
@@ -94,26 +136,34 @@ export default function VisitorsPage({ theme }) {
   // 2. அடுத்த கட்ட பைப்லைனுக்கு நகர்த்துதல் (Advance Stage)
   const handleAdvanceStage = (visitorId) => {
     const stageKeys = ['FIRST_VISIT', 'CONTACTED', 'PRAYER_MEET', 'COMMITTED'];
-    const updated = visitors.map(v => {
-      if (v.id === visitorId) {
-        const currIdx = stageKeys.indexOf(v.stage);
-        const nextStage = currIdx < stageKeys.length - 1 ? stageKeys[currIdx + 1] : v.stage;
-        return { ...v, stage: nextStage };
-      }
-      return v;
-    });
+    const updatedVisitor = visitors.find(visitor => visitor.id === visitorId);
+    if (!updatedVisitor) return;
+    const currIdx = stageKeys.indexOf(updatedVisitor.stage);
+    const nextStage = currIdx < stageKeys.length - 1 ? stageKeys[currIdx + 1] : updatedVisitor.stage;
+    const changedVisitor = { ...updatedVisitor, stage: nextStage, updated_at: new Date().toISOString() };
+    const updated = visitors.map(visitor => visitor.id === visitorId ? changedVisitor : visitor);
     setVisitors(updated);
     showToast('Soul Care Stage advanced successfully!');
+    batchUpsertVisitors([changedVisitor]).catch(error => {
+      console.error('[VisitorsPage] Unable to sync visitor stage:', error);
+      showToast('Stage saved locally, but cloud sync failed.');
+    });
   };
 
-  // 3. விசிட்டரை நிரந்தர உறுப்பினராக மாற்றுதல் (Convert to Member)
   const handleConvertToMember = async (visitor) => {
-    const confirmConvert = window.confirm(`${visitor.name}-ஐ சபையின் நிரந்தர உறுப்பினராக (Full Member) சேர்க்க விரும்புகிறீர்களா?`);
+    if (!canConvertVisitor) return;
+    const confirmConvert = window.confirm(`Convert ${visitor.name} to a member?`);
     if (!confirmConvert) return;
+    let memberCreated = false;
 
     try {
-      const generatedMemberId = `GCC-MBR-${Date.now().toString().slice(-4)}`;
-      const generatedFamilyId = `FAM-${Date.now().toString().slice(-4)}`;
+      const client = getSupabase();
+      if (!client || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        throw new Error('Connect to Supabase before converting a visitor to a member.');
+      }
+
+      const generatedMemberId = `MEM-${Date.now()}`;
+      const generatedFamilyId = `FAM-${Date.now()}`;
       const memberRecord = sanitizeMemberPayload({
         id: generatedMemberId,
         family_id: generatedFamilyId,
@@ -126,30 +176,25 @@ export default function VisitorsPage({ theme }) {
         ministry_talents: ['Prayer Team']
       });
 
-      await upsertMember(memberRecord);
+      await batchUpsertMembers([memberRecord]);
+      memberCreated = true;
 
-      try {
-        const cached = localStorage.getItem('graceos_vault_members');
-        const members = cached ? JSON.parse(cached) : [];
-        members.unshift(memberRecord);
-        localStorage.setItem('graceos_vault_members', JSON.stringify(members));
-      } catch (e) {
-        console.warn('Failed to update local member cache:', e);
-      }
-
-      const updated = visitors.map(v => 
-        v.id === visitor.id ? { ...v, stage: 'CONVERTED' } : v
-      );
+      const convertedVisitor = { ...visitor, stage: 'CONVERTED', updated_at: new Date().toISOString() };
+      const updated = visitors.map(v => v.id === visitor.id ? convertedVisitor : v);
       setVisitors(updated);
-      showToast(`வெற்றி! ${visitor.name} சபையின் உறுப்பினராக சேர்க்கப்பட்டார் (${generatedMemberId}).`);
+      await batchUpsertVisitors([convertedVisitor]);
+      showToast('Success! Member profile created and linked to Household Vault.');
     } catch (err) {
       console.error('Failed to convert visitor to member:', err);
-      showToast('Error converting visitor to member. Please try again.');
+      if (memberCreated) {
+        showToast(`Member created, but visitor sync failed: ${err.message}`);
+      } else {
+        showToast(`Conversion failed: ${err.message}`);
+      }
     }
   };
 
-  // 4. புதிய விருந்தினரைச் சேமித்தல்
-  const handleSaveVisitor = (e) => {
+  const handleSaveVisitor = async (e) => {
     e.preventDefault();
     if (!regForm.name.trim() || !regForm.phone.trim()) return;
 
@@ -161,13 +206,33 @@ export default function VisitorsPage({ theme }) {
       invitedBy: regForm.invitedBy.trim() || 'Self Walk-in',
       stage: 'FIRST_VISIT',
       visitDate: new Date().toISOString().slice(0, 10),
-      notes: regForm.notes.trim() || 'First time visitor.'
+      notes: regForm.notes.trim() || 'First time visitor.',
+      updated_at: new Date().toISOString()
     };
 
-    setVisitors([newEntry, ...visitors]);
+    setVisitors(current => [newEntry, ...current]);
     setRegForm({ name: '', phone: '', area: '', invitedBy: '', notes: '' });
     setActiveSubTab('pipeline');
-    showToast(`${newEntry.name} பைப்லைனில் சேர்க்கப்பட்டார்!`);
+    try {
+      await batchUpsertVisitors([newEntry]);
+      showToast('Added to Care Follow-up Pipeline.');
+    } catch (error) {
+      console.error('[VisitorsPage] Unable to save visitor to Supabase:', error);
+      showToast('Visitor saved locally, but cloud sync failed.');
+    }
+  };
+
+  const handleRemoveVisitor = async (visitor) => {
+    if (!window.confirm(`Are you sure you want to remove visitor ${visitor.name}?`)) return;
+    try {
+      await batchUpsertVisitors([], [visitor.id]);
+      setVisitors(current => current.filter(item => item.id !== visitor.id));
+      showToast('Visitor removed from the pipeline.');
+    } catch (error) {
+      console.error('[VisitorsPage] Unable to remove visitor:', error);
+      cacheVisitors(visitors);
+      showToast(`Unable to remove visitor: ${error.message}`);
+    }
   };
 
   // Search & Filter
@@ -411,10 +476,19 @@ export default function VisitorsPage({ theme }) {
                       >
                         <PhoneCall size={12} />
                       </a>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveVisitor(v)}
+                        className="p-1.5 rounded-xl bg-rose-500/10 text-rose-300 border border-rose-500/20 active:scale-95"
+                        title="Remove visitor"
+                        aria-label={`Remove visitor ${v.name}`}
+                      >
+                        <Trash2 size={12} />
+                      </button>
                     </div>
 
                     {/* Stage 4: Make Member or Advance Stage or Already Converted */}
-                    {v.stage === 'COMMITTED' ? (
+                    {v.stage === 'COMMITTED' && canConvertVisitor ? (
                       <button
                         type="button"
                         onClick={() => handleConvertToMember(v)}

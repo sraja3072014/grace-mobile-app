@@ -1,18 +1,23 @@
 // src/components/layout/MobileHeader.jsx
-import React from 'react';
-import { ChevronDown, Bell, Cloud, CloudOff, RefreshCw } from 'lucide-react';
+import { ChevronDown, Bell, RefreshCw } from 'lucide-react';
 import { useSyncStatus } from '../../hooks/useSyncStatus';
+import HeaderProfileMenu from './HeaderProfileMenu';
+import { useTranslation } from '../../context/LanguageContext';
 
 export default function MobileHeader({
   selectedBranch,
   theme = {},
   setIsChurchModalOpen,
   setIsUserMenuOpen,
-  onOpenSettings
+  onOpenSettings,
+  userProfile,
+  onOpenProfile,
+  onSignOut
 }) {
   const textColor = theme?.textMain || '#ffffff';
   const mutedColor = theme?.textMuted || 'rgba(255, 255, 255, 0.7)';
   const accentColor = theme?.accent || '#06b6d4';
+  const { t } = useTranslation();
 
   const { mode, lastSyncedTime } = useSyncStatus();
 
@@ -68,7 +73,7 @@ export default function MobileHeader({
             {mode === 'online' && (
               <>
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                <span className="text-emerald-400 hidden xs:inline">Online</span>
+                <span className="text-emerald-400 hidden xs:inline">{t('online')}</span>
                 <span className="text-emerald-300/80 text-[9px]">{lastSyncedTime || 'Live'}</span>
               </>
             )}
@@ -76,14 +81,14 @@ export default function MobileHeader({
             {mode === 'syncing' && (
               <>
                 <RefreshCw size={10} className="text-cyan-400 animate-spin shrink-0" />
-                <span className="text-cyan-300">Syncing...</span>
+                <span className="text-cyan-300">{t('common.syncing')}</span>
               </>
             )}
 
             {mode === 'local' && (
               <>
                 <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
-                <span className="text-rose-400">Local Vault</span>
+                <span className="text-rose-400">{t('local_vault')}</span>
               </>
             )}
           </div>
@@ -91,7 +96,8 @@ export default function MobileHeader({
           {/* Notification Bell */}
           <button 
             type="button"
-            onClick={() => alert("All notifications caught up")}
+            onClick={() => alert(t('notifications_empty'))}
+            aria-label={t('notifications')}
             className="w-8 h-8 rounded-full border flex items-center justify-center cursor-pointer active:scale-90 transition backdrop-blur-md"
             style={{
               background: 'rgba(15, 23, 42, 0.65)',
@@ -102,17 +108,12 @@ export default function MobileHeader({
             <Bell size={13} style={{ color: textColor }} />
           </button>
 
-          {/* User Profile Avatar */}
-          <div 
-            onClick={() => setIsUserMenuOpen?.(true)}
-            className="w-8 h-8 rounded-full border-2 flex items-center justify-center font-black text-[11px] text-white shadow-sm cursor-pointer active:scale-90 transition overflow-hidden"
-            style={{ 
-              background: accentColor,
-              borderColor: accentColor
-            }}
-          >
-            RS
-          </div>
+          <HeaderProfileMenu
+            userProfile={userProfile}
+            onOpenProfile={onOpenProfile}
+            onOpenSettings={() => onOpenSettings?.('vault')}
+            onSignOut={onSignOut}
+          />
         </div>
 
       </div>

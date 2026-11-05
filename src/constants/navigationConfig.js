@@ -5,10 +5,16 @@ import {
   Video, Megaphone, HeartHandshake, BookOpen, 
   UserCheck, DollarSign, BarChart3, Settings, HelpCircle, LogOut 
 } from 'lucide-react';
-import { translations } from '../i18n/translations';
+import { translations } from '../i18n/translations.js';
+import { getTranslation } from '../utils/translations.js';
 
 export function getNavigationConfig(language = 'en') {
-  const nav = translations[language]?.nav || translations.en.nav;
+  const nav = new Proxy(translations[language]?.nav || translations.en.nav, {
+    get(target, property) {
+      if (typeof property !== 'string') return target[property];
+      return getTranslation(language, `nav.${property}`);
+    }
+  });
   return {
     bottomNavTabs: [
       { id: 'home', label: nav.home, icon: Home, hasSubMenu: false },

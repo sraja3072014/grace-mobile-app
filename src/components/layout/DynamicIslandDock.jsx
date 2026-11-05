@@ -1,10 +1,10 @@
 // src/components/layout/DynamicIslandDock.jsx
-import React from 'react';
 import { 
   Plus, CheckSquare, DollarSign, UserPlus
 } from 'lucide-react';
 import { getNavigationConfig } from '../../constants/navigationConfig';
 import { useTranslation } from '../../hooks/useTranslation';
+import { canAccessTab, hasPermission, ROLES } from '../../utils/accessControl';
 
 export default function DynamicIslandDock({
   activeTab,
@@ -14,10 +14,13 @@ export default function DynamicIslandDock({
   isIslandExpanded,
   setIsIslandExpanded,
   onTriggerAction,
-  theme
+  theme,
+  role = ROLES.MEMBER
 }) {
   const { language, t } = useTranslation();
-  const mainNavTabs = getNavigationConfig(language).bottomNavTabs.map((tab) => ({ ...tab, isPopup: tab.hasSubMenu }));
+  const mainNavTabs = getNavigationConfig(language).bottomNavTabs
+    .map((tab) => ({ ...tab, isPopup: tab.hasSubMenu }))
+    .filter((tab) => canAccessTab(role, tab.id));
 
   return (
     <div className="fixed bottom-5 inset-x-0 z-40 flex flex-col items-center justify-center px-4 pointer-events-none">
@@ -58,7 +61,7 @@ export default function DynamicIslandDock({
             <span>{t('common.tithe')}</span>
           </button>
 
-          <button
+          {hasPermission(role, 'MANAGE_MEMBERS') && <button
             type="button"
             onClick={() => {
               onTriggerAction('action_add_member');
@@ -68,7 +71,7 @@ export default function DynamicIslandDock({
           >
             <UserPlus size={13} className="text-amber-300" />
             <span>{t('common.member')}</span>
-          </button>
+          </button>}
         </div>
       )}
 

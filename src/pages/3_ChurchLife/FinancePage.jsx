@@ -1,27 +1,33 @@
 // src/pages/3_ChurchLife/FinancePage.jsx
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
-  DollarSign, ArrowDownLeft, ArrowUpRight, 
-  Receipt, Landmark, Filter, Download 
+  DollarSign, ArrowDownLeft, ArrowUpRight
 } from 'lucide-react';
 import GlassCard from '../../components/common/GlassCard';
 import { formatCurrency } from '../../i18n/translations';
 import { useTranslation } from '../../hooks/useTranslation';
+import { hasPermission, ROLES } from '../../utils/accessControl';
+import MemberGivingPortal from '../../components/auth/MemberGivingPortal';
 
 export default function FinancePage({ 
   theme, 
-  onRecordTransaction 
+  onRecordTransaction,
+  role = ROLES.MEMBER
 }) {
   const [filterType, setFilterType] = useState('all');
   const { t } = useTranslation();
 
-  const [transactions, setTransactions] = useState([
+  const [transactions] = useState([
     { id: 1, title: 'Sunday Morning 1st Service Tithes', rawAmount: 145000, type: 'income', fund: 'SBI - General Tithe', date: 'Oct 24, 2026', receiptNo: 'GCC-REC-8801' },
     { id: 2, title: 'Main Sanctuary Central AC Maintenance', rawAmount: 18500, type: 'expense', fund: 'Utility & Maintenance', date: 'Oct 22, 2026', receiptNo: 'GCC-EXP-1042' },
     { id: 3, title: 'Youth Retreat Special Sponsorship', rawAmount: 25000, type: 'income', fund: 'ICICI - Missions', date: 'Oct 20, 2026', receiptNo: 'GCC-REC-8795' },
     { id: 4, title: 'Campus Diesel Generator Refuel', rawAmount: 6200, type: 'expense', fund: 'Utility', date: 'Oct 19, 2026', receiptNo: 'GCC-EXP-1041' },
     { id: 5, title: 'Building Expansion Fund Direct Deposit', rawAmount: 50000, type: 'income', fund: 'HDFC - Building', date: 'Oct 18, 2026', receiptNo: 'GCC-REC-8790' }
   ]);
+
+  if (!hasPermission(role, 'VIEW_FINANCE_DESK')) {
+    return <MemberGivingPortal />;
+  }
 
   const totalIn = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.rawAmount, 0);
   const totalOut = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.rawAmount, 0);

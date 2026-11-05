@@ -1,7 +1,7 @@
 // src/App.jsx
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useWeatherEngine } from './hooks/useWeatherEngine';
-import { DEFAULT_CAMPUSES, INITIAL_USER_PROFILE } from './constants/churchDefaults';
+import { DEFAULT_CAMPUSES } from './constants/churchDefaults';
 
 // Common Components
 import AmbientBackdrop from './components/common/AmbientBackdrop';
@@ -12,7 +12,7 @@ import PullToRefresh from './components/common/PullToRefresh';
 import MobileHeader from './components/layout/MobileHeader';
 import DynamicIslandDock from './components/layout/DynamicIslandDock';
 import ChurchSpaceModal from './components/modals/ChurchSpaceModal';
-import UserProfileDrawer from './components/layout/UserProfileDrawer';
+import UnifiedSettingsModal from './components/layout/UnifiedSettingsModal';
 import NavSubPopups from './components/layout/NavSubPopups';
 
 // Modals
@@ -21,7 +21,12 @@ import QuickAttendanceModal from './components/modals/QuickAttendanceModal';
 import FinanceEntryModal from './components/modals/FinanceEntryModal';
 import TerminalPairingModal from './components/modals/TerminalPairingModal';
 import { upsertMember } from './services/memberService';
-import { isVaultConfigured } from './utils/supabaseClient';
+import { getSupabase, isVaultConfigured } from './utils/supabaseClient';
+import { clearSession, isAuthenticated, saveSession, signOut } from './utils/authSession';
+import { ROLES, canAccessTab, hasPermission } from './utils/accessControl';
+import LoginPage from './components/auth/LoginPage';
+import UserProfileEditModal from './components/auth/UserProfileEditModal';
+import UserProfilePage from './pages/2_People/UserProfilePage';
 
 // Pages
 import OverviewTab from './pages/1_Overview/OverviewTab';
@@ -39,6 +44,67 @@ import BiblePage from './pages/4_Connect/BiblePage';
 export default function App() {
   const themeEngine = useWeatherEngine();
   const { currentTheme } = themeEngine;
+  const [authUser, setAuthUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [isPairingModalOpen, setIsPairingModalOpen] = useState(() => !isVaultConfigured());
+  const [loginInitialMode, setLoginInitialMode] = useState('signin');
+  const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false);
+  const [profileEditorMode, setProfileEditorMode] = useState('profile');
+
+  const refreshAuthSession = useCallback(async () => {
+    const client = getSupabase();
+    if (!client) {
+      clearSession();
+      setAuthUser(null);
+      setAuthReady(true);
+      return;
+    }
+
+    setAuthReady(false);
+    try {
+      const { data, error } = await client.auth.getSession();
+      if (error) throw error;
+      if (data.session?.user) {
+        setAuthUser(saveSession(data.session.user));
+      } else {
+        clearSession();
+        setAuthUser(null);
+      }
+    } catch (error) {
+      console.error('[App] Unable to restore the Supabase session:', error);
+      clearSession();
+      setAuthUser(null);
+    } finally {
+      setAuthReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    let authSubscription = null;
+    const handleAuthStateChange = (_event, session) => {
+      if (session?.user) {
+        setAuthUser(saveSession(session.user));
+      } else {
+        clearSession();
+        setAuthUser(null);
+      }
+    };
+    const refreshConfiguredClient = () => {
+      authSubscription?.unsubscribe();
+      const client = getSupabase();
+      authSubscription = client?.auth.onAuthStateChange(handleAuthStateChange).data.subscription || null;
+      refreshAuthSession();
+    };
+
+    window.addEventListener('grace_vault_credentials_changed', refreshConfiguredClient);
+    const restoreTimer = window.setTimeout(refreshConfiguredClient, 0);
+
+    return () => {
+      window.clearTimeout(restoreTimer);
+      authSubscription?.unsubscribe();
+      window.removeEventListener('grace_vault_credentials_changed', refreshConfiguredClient);
+    };
+  }, [refreshAuthSession]);
 
   // Navigation & Sub-Menu States
   const [activeTab, setActiveTab] = useState('home');
@@ -58,27 +124,65 @@ export default function App() {
   const [membersRefreshCount, setMembersRefreshCount] = useState(0);
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
   const [isFinanceModalOpen, setIsFinanceModalOpen] = useState(false);
-  const [isPairingModalOpen, setIsPairingModalOpen] = useState(() => !isVaultConfigured());
 
   // App Data States
-  const [branches, setBranches] = useState(DEFAULT_CAMPUSES);
-  const [selectedBranch, setSelectedBranch] = useState(DEFAULT_CAMPUSES[0]);
-  const userProfile = INITIAL_USER_PROFILE;
+  const [branches, setBranches] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('grace_campuses') || '[]');
+      return Array.isArray(saved) && saved.length ? saved : DEFAULT_CAMPUSES;
+    } catch (error) {
+      console.warn('[App] Unable to restore saved campuses:', error);
+      return DEFAULT_CAMPUSES;
+    }
+  });
+  const [selectedBranch, setSelectedBranch] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('grace_campuses') || '[]');
+      const campuses = Array.isArray(saved) && saved.length ? saved : DEFAULT_CAMPUSES;
+      return campuses.find(campus => campus.isHQ) || campuses[0];
+    } catch {
+      return DEFAULT_CAMPUSES[0];
+    }
+  });
+  const role = authUser?.role || ROLES.MEMBER;
+  const userProfile = {
+    name: authUser?.name || authUser?.email || 'GraceOS User',
+    role,
+    adminRole: role,
+    email: authUser?.email || '',
+    id: authUser?.id || '',
+    mobileNumber: authUser?.mobileNumber || '',
+    organizationName: authUser?.organizationName || '',
+    isDemoMode: authUser?.isDemoMode === true,
+    gender: authUser?.gender || '',
+    birthDate: authUser?.birthDate || '',
+    conversionDate: authUser?.conversionDate || '',
+    memberSince: authUser?.memberSince || '',
+    title: authUser?.title || '',
+    ministries: authUser?.ministries || [],
+    baptized: authUser?.baptized || false,
+    baptismDate: authUser?.baptismDate || '',
+    avatar: authUser?.avatar || '',
+    familyMembers: authUser?.familyMembers || []
+  };
   const [financeType, setFinanceType] = useState('income');
   const [liveCheckins, setLiveCheckins] = useState(142);
 
   const handleOpenAddMember = (initialData = null) => {
+    if (!hasPermission(role, 'MANAGE_MEMBERS')) return;
     setSelectedMemberForEdit(initialData);
     setIsMemberModalOpen(true);
   };
 
   const handleOpenEditMember = (member) => {
+    if (!hasPermission(role, 'MANAGE_MEMBERS')) return;
     setSelectedMemberForEdit(member);
     setIsMemberModalOpen(true);
   };
 
   // 🌟 Deep Navigation Linking: Direct Registration Route from anywhere
   const handleDirectRegister = (initialData = null) => {
+    if (!hasPermission(role, 'MANAGE_MEMBERS')) return;
     setIsAttendanceModalOpen(false);
     setIsChurchHubOpen(false);
     setActiveTab('members');
@@ -92,6 +196,10 @@ export default function App() {
   };
 
   const handleSaveMember = async (memberData) => {
+    if (!hasPermission(role, 'MANAGE_MEMBERS')) {
+      alert('You do not have permission to manage member profiles.');
+      return false;
+    }
     try {
       await upsertMember(memberData);
       setMembersRefreshCount((count) => count + 1);
@@ -108,17 +216,29 @@ export default function App() {
     const name = window.prompt('Enter the campus or branch name to create or join:');
     const trimmedName = name?.trim();
     if (!trimmedName) return;
+    if (branches.some(branch => branch.name.toLowerCase() === trimmedName.toLowerCase())) {
+      alert('A campus with that name already exists.');
+      return;
+    }
 
     const branch = {
-      id: `branch-${Date.now()}`,
+      id: `branch-${trimmedName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
       name: trimmedName,
       code: 'GCC-NEW',
       city: 'New Campus',
       isHQ: false
     };
-    setBranches((current) => [...current, branch]);
+
+    handleCampusesChange([...branches, branch]);
     setSelectedBranch(branch);
     setIsChurchHubOpen(false);
+  };
+
+  const handleCampusesChange = (nextCampuses) => {
+    if (!nextCampuses.length) return;
+    setBranches(nextCampuses);
+    localStorage.setItem('grace_campuses', JSON.stringify(nextCampuses));
+    setSelectedBranch(current => nextCampuses.find(campus => campus.id === current?.id) || nextCampuses[0]);
   };
 
   // Dynamic Island Action Handler
@@ -126,8 +246,12 @@ export default function App() {
     if (actionId === 'action_checkin') {
       setIsAttendanceModalOpen(true);
     } else if (actionId === 'action_tithe') {
-      setFinanceType('income');
-      setIsFinanceModalOpen(true);
+      if (hasPermission(role, 'VIEW_FINANCE_DESK')) {
+        setFinanceType('income');
+        setIsFinanceModalOpen(true);
+      } else {
+        setActiveTab('finance');
+      }
     } else if (actionId === 'action_add_member') {
       handleDirectRegister();
     } else if (actionId === 'action_service_flow') {
@@ -139,11 +263,58 @@ export default function App() {
     await new Promise((resolve) => setTimeout(resolve, 800));
   };
 
-  const handlePaired = () => {
+  const handlePaired = (user) => {
     setIsPairingModalOpen(false);
-    setActiveTab('members');
-    setMembersRefreshCount(count => count + 1);
+    if (user?.isDemoMode) {
+      setAuthUser(saveSession(user));
+      setAuthReady(true);
+      return;
+    }
+    refreshAuthSession();
   };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      setAuthUser(null);
+      setIsUserMenuOpen(false);
+      setActiveTab('home');
+    } catch (error) {
+      console.error('[App] Sign out failed:', error);
+      alert(`Unable to sign out: ${error.message}`);
+    }
+  };
+
+  const handleStartStaffSignup = async () => {
+    setLoginInitialMode('signup');
+    await handleSignOut();
+  };
+
+  if (!authReady) {
+    return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm font-semibold text-white/70">Restoring secure session…</div>;
+  }
+
+  if (!authUser || !isAuthenticated()) {
+    return (
+      <>
+        <LoginPage
+          theme={currentTheme}
+          initialMode={loginInitialMode}
+          onLoginSuccess={(user) => {
+            setAuthUser(user);
+            setLoginInitialMode('signin');
+          }}
+          onOpenPairing={() => setIsPairingModalOpen(true)}
+        />
+        <TerminalPairingModal
+          isOpen={isPairingModalOpen}
+          onClose={() => setIsPairingModalOpen(false)}
+          onPaired={handlePaired}
+          theme={currentTheme}
+        />
+      </>
+    );
+  }
 
   return (
     <PullToRefresh onRefresh={handleGlobalRefresh} theme={currentTheme}>
@@ -163,8 +334,8 @@ export default function App() {
           setIsChurchModalOpen={setIsChurchHubOpen}
           theme={currentTheme}
           userProfile={userProfile}
-          isUserMenuOpen={isUserMenuOpen}
-          setIsUserMenuOpen={setIsUserMenuOpen}
+          onOpenProfile={() => setActiveTab('profile')}
+          onSignOut={handleSignOut}
           onOpenSettings={handleOpenSettings}
         />
 
@@ -183,20 +354,61 @@ export default function App() {
         />
 
         {/* 4. GraceOS Settings & Vault Console (5 Clean Sub-Tabs) */}
-        <UserProfileDrawer
+        <UnifiedSettingsModal
           isOpen={isUserMenuOpen}
           onClose={() => setIsUserMenuOpen(false)}
           userProfile={userProfile}
           theme={currentTheme}
           initialTab={settingsSubTab}
           themeEngine={themeEngine}
+          onSignOut={handleSignOut}
+          onAddStaff={handleStartStaffSignup}
+          onSwitchAccount={handleSignOut}
+          campuses={branches}
+          onCampusesChange={handleCampusesChange}
+          onOpenProfile={() => {
+            setIsUserMenuOpen(false);
+            setActiveTab('profile');
+          }}
+          onOpenPassword={() => {
+            setIsUserMenuOpen(false);
+            setProfileEditorMode('password');
+            setIsProfileEditorOpen(true);
+          }}
         />
+
+        {isProfileEditorOpen && (
+          <UserProfileEditModal
+            isOpen={isProfileEditorOpen}
+            initialMode={profileEditorMode}
+            userProfile={userProfile}
+            onClose={() => setIsProfileEditorOpen(false)}
+            onSave={setAuthUser}
+          />
+        )}
 
         {/* 5. Marquee Notice Ticker */}
         <TickerNotice theme={currentTheme} />
 
         {/* 6. Main Content Area */}
         <main className="relative z-10 max-w-lg mx-auto px-5 pt-4 space-y-4">
+          {activeTab === 'profile' && (
+            <UserProfilePage
+              key={`${userProfile.id}:${userProfile.name}:${userProfile.email}:${userProfile.mobileNumber}`}
+              userProfile={userProfile}
+              onBack={() => setActiveTab('home')}
+              onProfileChange={setAuthUser}
+              onEditProfile={() => {
+                setProfileEditorMode('profile');
+                setIsProfileEditorOpen(true);
+              }}
+              onChangePassword={() => {
+                setProfileEditorMode('password');
+                setIsProfileEditorOpen(true);
+              }}
+              onDeactivateSession={handleSignOut}
+            />
+          )}
           {activeTab === 'home' && (
             <OverviewTab 
               theme={currentTheme}
@@ -204,11 +416,15 @@ export default function App() {
               liveCheckins={liveCheckins}
               onOpenAttendance={() => setIsAttendanceModalOpen(true)}
               onOpenMembers={() => setActiveTab('members')}
-              onRegisterMember={handleDirectRegister}
+              onRegisterMember={hasPermission(role, 'MANAGE_MEMBERS') ? handleDirectRegister : undefined}
               onOpenSettings={handleOpenSettings}
               onOpenFinance={() => {
-                setFinanceType('income');
-                setIsFinanceModalOpen(true);
+                if (hasPermission(role, 'VIEW_FINANCE_DESK')) {
+                  setFinanceType('income');
+                  setIsFinanceModalOpen(true);
+                } else {
+                  setActiveTab('finance');
+                }
               }}
             />
           )}
@@ -219,14 +435,16 @@ export default function App() {
               onAddNewMember={handleOpenAddMember}
               onEditMember={handleOpenEditMember}
               refreshTrigger={membersRefreshCount}
+              role={role}
             />
           )}
 
-          {activeTab === 'visitors' && <VisitorsPage theme={currentTheme} />}
+          {activeTab === 'visitors' && <VisitorsPage theme={currentTheme} role={role} />}
           {activeTab === 'ministries' && <MinistriesPage theme={currentTheme} />}
           {activeTab === 'finance' && (
             <FinancePage 
               theme={currentTheme}
+              role={role}
               onRecordTransaction={(type) => {
                 setFinanceType(type);
                 setIsFinanceModalOpen(true);
@@ -246,10 +464,12 @@ export default function App() {
           activeSubMenu={activeSubMenu}
           onClose={() => setActiveSubMenu(null)}
           onSelectSubItem={(subId) => {
+            if (!canAccessTab(role, subId)) return;
             setActiveTab(subId);
             setActiveSubMenu(null);
           }}
           theme={currentTheme}
+          role={role}
         />
 
         {/* 8. Bottom Navigation Dynamic Island Dock */}
@@ -262,10 +482,12 @@ export default function App() {
           setIsIslandExpanded={setIsIslandExpanded}
           onTriggerAction={handleTriggerAction}
           theme={currentTheme}
+          role={role}
         />
 
         {/* 9. Standalone Modals */}
-        <MemberProfileModal 
+        {hasPermission(role, 'MANAGE_MEMBERS') && (
+          <MemberProfileModal
           isOpen={isMemberModalOpen}
           onClose={() => {
             setIsMemberModalOpen(false);
@@ -274,23 +496,26 @@ export default function App() {
           initialData={selectedMemberForEdit}
           onSaveMember={handleSaveMember}
           theme={currentTheme}
-        />
+          />
+        )}
 
         <QuickAttendanceModal 
           isOpen={isAttendanceModalOpen}
           onClose={() => setIsAttendanceModalOpen(false)}
           onMarkAttendance={() => setLiveCheckins(prev => prev + 1)}
-          onRegisterMember={handleDirectRegister}
+          onRegisterMember={hasPermission(role, 'MANAGE_MEMBERS') ? handleDirectRegister : undefined}
           theme={currentTheme}
         />
 
-        <FinanceEntryModal 
-          isOpen={isFinanceModalOpen}
-          onClose={() => setIsFinanceModalOpen(false)}
-          initialType={financeType}
-          onAddTransaction={(tx) => alert(`Recorded: ${tx.title} (${tx.amount})`)}
-          theme={currentTheme}
-        />
+        {hasPermission(role, 'VIEW_FINANCE_DESK') && (
+          <FinanceEntryModal
+            isOpen={isFinanceModalOpen}
+            onClose={() => setIsFinanceModalOpen(false)}
+            initialType={financeType}
+            onAddTransaction={(tx) => alert(`Recorded: ${tx.title} (${tx.amount})`)}
+            theme={currentTheme}
+          />
+        )}
 
         <TerminalPairingModal
           isOpen={isPairingModalOpen}

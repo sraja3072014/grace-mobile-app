@@ -1,19 +1,35 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, CheckCircle2, FileImage, LockKeyhole, WifiOff, X } from 'lucide-react';
 import { configureSupabaseSession, isVaultConfigured, parsePairingPayload } from '../../utils/supabaseClient';
+import { saveSession } from '../../utils/authSession';
 
 export default function TerminalPairingModal({ isOpen, onClose, theme = {}, onPaired }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const [mode, setMode] = useState('welcome');
+  const [mode, setMode] = useState(() => isVaultConfigured() ? 'paired' : 'welcome');
   const [status, setStatus] = useState('');
+  const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
+  const [manualSupabaseUrl, setManualSupabaseUrl] = useState('');
+  const [manualAnonKey, setManualAnonKey] = useState('');
+  const [wasOpen, setWasOpen] = useState(isOpen);
+
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) {
+      setMode(isVaultConfigured() ? 'paired' : 'welcome');
+      setStatus('');
+      setIsManualEntryOpen(false);
+      setManualSupabaseUrl('');
+      setManualAnonKey('');
+    }
+  }
 
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach(track => track.stop());
     streamRef.current = null;
   };
 
-  const handlePayload = (rawPayload) => {
+  const handlePayload = useCallback((rawPayload) => {
     try {
       const payload = parsePairingPayload(rawPayload);
       configureSupabaseSession(payload.supabaseUrl, payload.supabaseAnonKey);
@@ -24,12 +40,10 @@ export default function TerminalPairingModal({ isOpen, onClose, theme = {}, onPa
     } catch (error) {
       setStatus(error.message);
     }
-  };
+  }, [onPaired]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
-    setMode(isVaultConfigured() ? 'paired' : 'welcome');
-    setStatus('');
     return () => stopCamera();
   }, [isOpen]);
 
@@ -67,13 +81,14 @@ export default function TerminalPairingModal({ isOpen, onClose, theme = {}, onPa
       }
     }, 700);
     return () => window.clearInterval(timer);
-  }, [mode]);
+  }, [handlePayload, mode]);
 
   const handleImageScan = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
     if (typeof window.BarcodeDetector === 'undefined') {
       setStatus('This browser cannot decode QR images. Open the pairing page in a modern mobile browser or use the camera scanner.');
+      setIsManualEntryOpen(true);
       return;
     }
     try {
@@ -83,7 +98,37 @@ export default function TerminalPairingModal({ isOpen, onClose, theme = {}, onPa
       handlePayload(codes[0].rawValue);
     } catch (error) {
       setStatus(error.message || 'Unable to scan that QR image.');
+      setIsManualEntryOpen(true);
     }
+  };
+
+  const handleManualPair = () => {
+    try {
+      const payload = {
+        supabaseUrl: manualSupabaseUrl,
+        supabaseAnonKey: manualAnonKey
+      };
+      configureSupabaseSession(payload.supabaseUrl, payload.supabaseAnonKey);
+      setMode('paired');
+      setStatus('Paired to Supabase cloud vault.');
+      stopCamera();
+      onPaired?.(payload);
+    } catch (error) {
+      setStatus(error.message || 'Unable to connect this Supabase project.');
+    }
+  };
+
+  const handleContinueOffline = () => {
+    const demoAdmin = {
+      id: 'DEMO-ADMIN-001',
+      name: 'Rev. Dr. S. Johnraja (Demo Admin)',
+      email: 'pastor.lead@graceos.local',
+      role: 'SUPER_ADMIN',
+      isDemoMode: true
+    };
+    saveSession(demoAdmin);
+    setMode('offline');
+    onPaired?.(demoAdmin);
   };
 
   if (!isOpen) return null;
@@ -106,7 +151,7 @@ export default function TerminalPairingModal({ isOpen, onClose, theme = {}, onPa
             <button type="button" onClick={() => setMode('scanner')} className="flex w-full items-center gap-3 rounded-2xl border border-cyan-400/40 bg-cyan-400/15 p-4 text-left hover:bg-cyan-400/25" style={{ color: theme.accent || '#67e8f9' }}>
               <Camera size={20} /><span><strong className="block">Scan QR from Desktop Portal</strong><small className="text-white/60">Use camera or upload a QR screenshot</small></span>
             </button>
-            <button type="button" onClick={() => { setMode('offline'); onPaired?.({ offline: true }); }} className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-left hover:bg-white/10">
+            <button type="button" onClick={handleContinueOffline} className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-left hover:bg-white/10">
               <WifiOff size={20} className="text-amber-300" /><span><strong className="block">Continue Offline / Demo Mode</strong><small className="text-white/60">Open the local Indexed Vault immediately</small></span>
             </button>
           </div>
@@ -119,6 +164,43 @@ export default function TerminalPairingModal({ isOpen, onClose, theme = {}, onPa
               <div className="pointer-events-none absolute inset-8 rounded-2xl border-2 border-cyan-300/80 shadow-[0_0_30px_rgba(34,211,238,0.4)]" />
             </div>
             <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm font-bold hover:bg-white/10"><FileImage size={16} /> Upload QR screenshot<input type="file" accept="image/*" onChange={handleImageScan} className="hidden" /></label>
+            <div className="rounded-2xl border border-white/10 bg-white/5">
+              <button
+                type="button"
+                aria-expanded={isManualEntryOpen}
+                onClick={() => setIsManualEntryOpen(open => !open)}
+                className="w-full rounded-2xl p-3 text-left text-sm font-semibold text-cyan-200 hover:bg-white/5"
+              >
+                Paste Supabase URL &amp; Anon Key manually
+              </button>
+              {isManualEntryOpen && (
+                <div className="space-y-2 px-3 pb-3">
+                  <input
+                    type="url"
+                    value={manualSupabaseUrl}
+                    onChange={event => setManualSupabaseUrl(event.target.value)}
+                    placeholder="https://your-project.supabase.co"
+                    aria-label="Supabase URL"
+                    className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                  />
+                  <input
+                    type="password"
+                    value={manualAnonKey}
+                    onChange={event => setManualAnonKey(event.target.value)}
+                    placeholder="Supabase anon key"
+                    aria-label="Supabase anon key"
+                    className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleManualPair}
+                    className="w-full rounded-xl bg-cyan-500/80 p-2 text-sm font-bold text-white hover:bg-cyan-500"
+                  >
+                    Connect Supabase
+                  </button>
+                </div>
+              )}
+            </div>
             <button type="button" onClick={() => { stopCamera(); setMode('welcome'); }} className="w-full rounded-xl p-2 text-xs text-white/60">Back to pairing options</button>
           </div>
         )}
@@ -127,7 +209,7 @@ export default function TerminalPairingModal({ isOpen, onClose, theme = {}, onPa
           <div className="mt-5 space-y-4 text-center">
             <CheckCircle2 size={48} className="mx-auto text-emerald-400" />
             <p className="text-sm text-white/70">{status || 'Local directory is ready. You can continue working without a network connection.'}</p>
-            <button type="button" onClick={onClose} className="w-full rounded-2xl bg-emerald-500/80 p-3 font-bold text-white hover:bg-emerald-500">Open Members Directory</button>
+            <button type="button" onClick={onClose} className="w-full rounded-2xl bg-emerald-500/80 p-3 font-bold text-white hover:bg-emerald-500">{mode === 'offline' ? 'Open Dashboard' : 'Open Members Directory'}</button>
           </div>
         )}
 

@@ -1,12 +1,12 @@
 // src/pages/1_Overview/OverviewTab.jsx
-import React from 'react';
 import { 
   Calendar, Users, DollarSign, MessageSquare, 
-  MapPin, Heart, HandHelping, Church, 
+  MapPin, Heart, Church,
   Database, Cloud, UserPlus, Sparkles, ArrowRight
 } from 'lucide-react';
 import { formatCurrency } from '../../i18n/translations';
 import { useTranslation } from '../../hooks/useTranslation';
+import { hasPermission } from '../../utils/accessControl';
 
 // 🌟 Outer Border, Transparent Center, Bottom Glow Acrylic Glass Card
 function MultiLayerGlassCard({ children, className = '', glowColor = 'rgba(6, 182, 212, 0.25)', onClick }) {
@@ -61,8 +61,8 @@ export default function OverviewTab({
               <Database size={15} className="text-cyan-400" />
             </div>
             <div>
-              <span className="font-bold text-xs block leading-tight text-white">Local Vault</span>
-              <span className="text-[9px] font-mono text-cyan-300/80">Device Storage & Backups</span>
+              <span className="font-bold text-xs block leading-tight text-white">{t('local_vault')}</span>
+              <span className="text-[9px] font-mono text-cyan-300/80">{t('device_storage_backups')}</span>
             </div>
           </div>
           <ArrowRight size={13} className="text-cyan-400 opacity-70" />
@@ -77,8 +77,8 @@ export default function OverviewTab({
               <Cloud size={15} className="text-indigo-400" />
             </div>
             <div>
-              <span className="font-bold text-xs block leading-tight text-white">Cloud Sync</span>
-              <span className="text-[9px] font-mono text-indigo-300/80">Supabase Zero-Hardcode</span>
+              <span className="font-bold text-xs block leading-tight text-white">{t('cloud_sync')}</span>
+              <span className="text-[9px] font-mono text-indigo-300/80">{t('supabase_zero_hardcode')}</span>
             </div>
           </div>
           <ArrowRight size={13} className="text-indigo-400 opacity-70" />
@@ -88,7 +88,7 @@ export default function OverviewTab({
       {/* ========================================================= */}
       {/* 🌟 2. Direct Member Registration Quick Route Bar */}
       {/* ========================================================= */}
-      <div 
+      {hasPermission(userProfile?.role, 'MANAGE_MEMBERS') && <div
         onClick={() => onRegisterMember ? onRegisterMember() : onOpenMembers?.()}
         className="p-3.5 rounded-2xl border border-white/15 bg-gradient-to-r from-emerald-500/15 via-cyan-500/15 to-transparent backdrop-blur-md flex items-center justify-between cursor-pointer active:scale-98 transition shadow-lg"
       >
@@ -100,9 +100,9 @@ export default function OverviewTab({
             <UserPlus size={16} />
           </div>
           <div>
-            <h4 className="text-xs font-black text-white leading-tight">Register New Believer / Household</h4>
+            <h4 className="text-xs font-black text-white leading-tight">{t('register_believer')}</h4>
             <span className="text-[10px] opacity-70 block text-slate-300 mt-0.5">
-              1-Tap registration flow with auto gender suggestions
+              {t('registration_hint')}
             </span>
           </div>
         </div>
@@ -110,9 +110,9 @@ export default function OverviewTab({
           className="px-2.5 py-1 rounded-xl text-[10px] font-black text-white shrink-0"
           style={{ background: accentColor }}
         >
-          + Add
+          {t('add')}
         </span>
-      </div>
+      </div>}
 
       {/* ========================================================= */}
       {/* 🌟 3. Top Metrics Row (4 Glass Boxes) */}
@@ -122,7 +122,7 @@ export default function OverviewTab({
         <MultiLayerGlassCard glowColor="rgba(6, 182, 212, 0.3)" className="p-2.5 flex flex-col justify-between h-20 text-center items-center">
           <div className="flex items-center gap-1 opacity-80">
             <Calendar size={13} className="text-cyan-400" />
-            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>Upcoming</span>
+            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>{t('upcoming')}</span>
           </div>
           <div className="text-base font-black flex items-center gap-0.5 leading-none" style={{ color: textColor }}>
             <span className="text-cyan-400 text-xs">▲</span> 4
@@ -155,7 +155,7 @@ export default function OverviewTab({
         <MultiLayerGlassCard glowColor="rgba(139, 92, 246, 0.3)" className="p-2.5 flex flex-col justify-between h-20 text-center items-center">
           <div className="flex items-center gap-1 opacity-80">
             <MessageSquare size={13} className="text-purple-400" />
-            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>{t('common.prayers')}</span>
+            <span className="text-[9px] font-bold" style={{ color: mutedTextColor }}>{t('messages')}</span>
           </div>
           <div className="text-base font-black leading-none" style={{ color: textColor }}>
             12
@@ -210,16 +210,16 @@ export default function OverviewTab({
             <div className="space-y-2.5 mt-2.5 text-[10px]">
               <div className="flex items-start gap-1.5 leading-snug">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-1" />
-                <span style={{ color: textColor }}>Easter Outreach This Saturday at Central Park</span>
+                <span style={{ color: textColor }}>{t('notice_easter')}</span>
               </div>
               <div className="flex items-start gap-1.5 leading-snug">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0 mt-1" />
-                <span style={{ color: textColor }}>Youth Worship Night Registration Open</span>
+                <span style={{ color: textColor }}>{t('notice_youth')}</span>
               </div>
             </div>
           </div>
           <div className="pt-2 text-right">
-            <span className="text-[8px] font-mono opacity-50 uppercase">Updated live</span>
+            <span className="text-[8px] font-mono opacity-50 uppercase">{t('common.updatedLive')}</span>
           </div>
         </MultiLayerGlassCard>
       </div>
@@ -235,7 +235,7 @@ export default function OverviewTab({
           style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' }}
         >
           <MapPin size={18} className="text-white" />
-          <span className="text-[10px] font-black text-white">Check-In</span>
+          <span className="text-[10px] font-black text-white">{t('common.checkIn') || t('check_in')}</span>
         </button>
 
         <button 
@@ -245,7 +245,7 @@ export default function OverviewTab({
           style={{ background: 'linear-gradient(135deg, #f43f5e 0%, #e11d48 100%)' }}
         >
           <Heart size={18} className="text-white fill-white/20" />
-          <span className="text-[10px] font-black text-white">Tithe / Give</span>
+          <span className="text-[10px] font-black text-white">{t('tithe_give')}</span>
         </button>
 
         <button 
@@ -255,7 +255,7 @@ export default function OverviewTab({
           style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
         >
           <Users size={18} className="text-white" />
-          <span className="text-[10px] font-black text-white">Directory</span>
+          <span className="text-[10px] font-black text-white">{t('directory')}</span>
         </button>
 
         <button 
@@ -265,7 +265,7 @@ export default function OverviewTab({
           style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #0284c7 100%)' }}
         >
           <Sparkles size={18} className="text-white" />
-          <span className="text-[9px] font-black text-white leading-tight">Theme Polish</span>
+          <span className="text-[9px] font-black text-white leading-tight">{t('theme_polish')}</span>
         </button>
       </div>
 

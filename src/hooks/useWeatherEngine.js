@@ -10,6 +10,8 @@ import {
 const STORAGE_PALETTE_KEY = 'grace_active_palette';
 const STORAGE_ENGINE_MODE = 'grace_engine_mode';
 const STORAGE_BLUR_DEPTH = 'grace_blur_depth';
+const STORAGE_ACCENT = 'grace_accent_color';
+const STORAGE_APPEARANCE = 'grace_appearance_mode';
 
 export function useWeatherEngine() {
   // Modes: 'palette' (Manual Acrylic Palette) | 'time' (Circadian Rhythm) | 'weather' (Live Weather)
@@ -29,6 +31,25 @@ export function useWeatherEngine() {
       return 'obsidian_cyan';
     }
   });
+  const [selectedAccent, setSelectedAccent] = useState(() => {
+    try {
+      return localStorage.getItem(STORAGE_ACCENT) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [appearanceMode, setAppearanceMode] = useState(() => {
+    try {
+      return localStorage.getItem(STORAGE_APPEARANCE) || 'system';
+    } catch {
+      return 'system';
+    }
+  });
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
+    typeof window === 'undefined' || !window.matchMedia
+      ? true
+      : window.matchMedia('(prefers-color-scheme: dark)').matches
+  );
 
   // Selected Weather Mode (Default: rain)
   const [selectedWeatherKey, setSelectedWeatherKey] = useState('rain');
@@ -56,6 +77,34 @@ export function useWeatherEngine() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const updatePreference = event => setSystemPrefersDark(event.matches);
+    media.addEventListener('change', updatePreference);
+    return () => media.removeEventListener('change', updatePreference);
+  }, []);
+
+  const handleSelectAccent = useCallback(color => {
+    if (!/^#[0-9a-f]{6}$/i.test(color)) return;
+    setSelectedAccent(color);
+    try {
+      localStorage.setItem(STORAGE_ACCENT, color);
+    } catch (error) {
+      console.warn('[Theme] Unable to save accent color:', error);
+    }
+  }, []);
+
+  const handleSelectAppearance = useCallback(mode => {
+    if (!['pure-dark', 'ink', 'light', 'system'].includes(mode)) return;
+    setAppearanceMode(mode);
+    try {
+      localStorage.setItem(STORAGE_APPEARANCE, mode);
+    } catch (error) {
+      console.warn('[Theme] Unable to save appearance mode:', error);
+    }
+  }, []);
+
   // Save changes to localStorage
   const handleSelectPalette = useCallback((key) => {
     if (ACRYLIC_PALETTES[key]) {
@@ -64,7 +113,7 @@ export function useWeatherEngine() {
       try {
         localStorage.setItem(STORAGE_PALETTE_KEY, key);
         localStorage.setItem(STORAGE_ENGINE_MODE, 'palette');
-      } catch (e) {
+      } catch {
         // ignore
       }
     }
@@ -76,7 +125,7 @@ export function useWeatherEngine() {
       setActiveEngineMode('weather');
       try {
         localStorage.setItem(STORAGE_ENGINE_MODE, 'weather');
-      } catch (e) {
+      } catch {
         // ignore
       }
     }
@@ -88,7 +137,7 @@ export function useWeatherEngine() {
       setActiveEngineMode('time');
       try {
         localStorage.setItem(STORAGE_ENGINE_MODE, 'time');
-      } catch (e) {
+      } catch {
         // ignore
       }
     }
@@ -99,7 +148,7 @@ export function useWeatherEngine() {
     setActiveEngineMode(nextMode);
     try {
       localStorage.setItem(STORAGE_ENGINE_MODE, nextMode);
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, []);
@@ -109,7 +158,7 @@ export function useWeatherEngine() {
     setActiveEngineMode(nextMode);
     try {
       localStorage.setItem(STORAGE_ENGINE_MODE, nextMode);
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, []);
@@ -119,7 +168,7 @@ export function useWeatherEngine() {
     setBlurDepth(val);
     try {
       localStorage.setItem(STORAGE_BLUR_DEPTH, String(val));
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, []);
@@ -135,15 +184,41 @@ export function useWeatherEngine() {
       baseTheme = ACRYLIC_PALETTES[selectedPaletteKey] || ACRYLIC_PALETTES.obsidian_cyan;
     }
 
-    return {
+    const theme = {
       ...baseTheme,
       blurDepth,
       activeEngineMode,
       selectedPaletteKey,
       selectedWeatherKey,
-      currentCircadianKey
+      currentCircadianKey,
+      appearanceMode,
+      accent: selectedAccent || baseTheme.accent
     };
-  }, [activeEngineMode, currentCircadianKey, selectedWeatherKey, selectedPaletteKey, blurDepth]);
+    const effectiveMode = appearanceMode === 'system'
+      ? (systemPrefersDark ? 'pure-dark' : 'light')
+      : appearanceMode;
+    if (effectiveMode === 'pure-dark') {
+      theme.bgGrad = 'linear-gradient(135deg, #000000 0%, #050505 55%, #0a0a0a 100%)';
+      theme.cardBg = 'rgba(10, 10, 10, 0.88)';
+      theme.textMain = '#ffffff';
+      theme.textMuted = '#a1a1aa';
+      theme.isDark = true;
+    } else if (effectiveMode === 'ink') {
+      theme.bgGrad = 'linear-gradient(135deg, #09090b 0%, #111113 55%, #18181b 100%)';
+      theme.cardBg = 'rgba(24, 24, 27, 0.82)';
+      theme.textMain = '#f4f4f5';
+      theme.textMuted = '#a1a1aa';
+      theme.isDark = true;
+    } else if (effectiveMode === 'light') {
+      theme.bgGrad = 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)';
+      theme.cardBg = 'rgba(255, 255, 255, 0.82)';
+      theme.cardBorder = 'rgba(15, 23, 42, 0.14)';
+      theme.textMain = '#0f172a';
+      theme.textMuted = '#475569';
+      theme.isDark = false;
+    }
+    return theme;
+  }, [activeEngineMode, appearanceMode, currentCircadianKey, selectedAccent, selectedWeatherKey, selectedPaletteKey, systemPrefersDark, blurDepth]);
 
   return {
     activeEngineMode,
@@ -154,6 +229,10 @@ export function useWeatherEngine() {
     toggleTimeMode,
     selectedPaletteKey,
     handleSelectPalette,
+    selectedAccent,
+    handleSelectAccent,
+    appearanceMode,
+    handleSelectAppearance,
     selectedWeatherKey,
     handleSelectWeather,
     selectedTimeKey: currentCircadianKey,
